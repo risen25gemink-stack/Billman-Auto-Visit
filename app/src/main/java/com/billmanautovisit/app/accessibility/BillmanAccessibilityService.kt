@@ -48,7 +48,10 @@ class BillmanAccessibilityService : AccessibilityService() {
             stateBeforeDispatch == AutomationState.VISIT_WO_SCREEN ||
             stateBeforeDispatch == AutomationState.TAP_CAMERA_2 ||
             stateBeforeDispatch == AutomationState.CAMERA_SHUTTER_2 ||
-            stateBeforeDispatch == AutomationState.CHECK_LUNAS
+            stateBeforeDispatch == AutomationState.CHECK_LUNAS ||
+            stateBeforeDispatch == AutomationState.CHECK_WAJIB ||
+            stateBeforeDispatch == AutomationState.INPUT_MIGRASI ||
+            stateBeforeDispatch == AutomationState.TAP_CAMERA_3
         ) {
             visitFlowController.onBillmanEvent()
         }
