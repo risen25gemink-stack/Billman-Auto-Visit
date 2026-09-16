@@ -71,7 +71,7 @@ class MainActivity : Activity() {
         }
 
         val phaseInfo = TextView(this).apply {
-            text = "Build uji: WO_LIST → READ_ID → INPUT_ID → TAP_CARI → WAIT_CARD → TAP_CARD → MENUJU_WO. Berhenti sebelum tap Tagging."
+            text = "Build uji: state 1–11 sampai foto Tagging selesai dan kembali ke Menuju WO. Berhenti sebelum menekan Visit."
             textSize = 14f
             setPadding(0, 0, 0, dp(18))
         }
