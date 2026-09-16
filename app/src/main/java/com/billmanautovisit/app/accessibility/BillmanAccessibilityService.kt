@@ -9,6 +9,7 @@ import com.billmanautovisit.app.core.AutomationState
 import com.billmanautovisit.app.core.TaggingGate
 import com.billmanautovisit.app.data.SqliteLocalDataStore
 import com.billmanautovisit.app.engine.AutomationEngine
+import com.billmanautovisit.app.engine.VisitFlowController
 import com.billmanautovisit.app.screen.ScreenReader
 
 class BillmanAccessibilityService : AccessibilityService() {
@@ -17,6 +18,7 @@ class BillmanAccessibilityService : AccessibilityService() {
     private lateinit var cameraTapper: CameraTapper
     private lateinit var localDataStore: SqliteLocalDataStore
     private lateinit var automationEngine: AutomationEngine
+    private lateinit var visitFlowController: VisitFlowController
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -24,6 +26,7 @@ class BillmanAccessibilityService : AccessibilityService() {
         cameraTapper = CameraTapper(this)
         localDataStore = SqliteLocalDataStore(applicationContext)
         automationEngine = AutomationEngine(screenReader, cameraTapper, localDataStore)
+        visitFlowController = VisitFlowController(screenReader, cameraTapper, localDataStore)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -33,10 +36,22 @@ class BillmanAccessibilityService : AccessibilityService() {
 
         val packageName = safeEvent.packageName?.toString() ?: return
         if (packageName != AppConfig.TARGET_PACKAGE) return
-        if (!::automationEngine.isInitialized) return
+        if (!::automationEngine.isInitialized || !::visitFlowController.isInitialized) return
         if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return
 
+        val stateBeforeDispatch = AutomationRuntime.currentState
         automationEngine.onBillmanEvent()
+
+        if (
+            stateBeforeDispatch == AutomationState.BACK_TO_MENUJU_WO ||
+            stateBeforeDispatch == AutomationState.TAP_VISIT ||
+            stateBeforeDispatch == AutomationState.VISIT_WO_SCREEN ||
+            stateBeforeDispatch == AutomationState.TAP_CAMERA_2 ||
+            stateBeforeDispatch == AutomationState.CAMERA_SHUTTER_2 ||
+            stateBeforeDispatch == AutomationState.CHECK_LUNAS
+        ) {
+            visitFlowController.onBillmanEvent()
+        }
     }
 
     private fun captureTaggingResult(event: AccessibilityEvent) {
@@ -67,6 +82,7 @@ class BillmanAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         if (::automationEngine.isInitialized) automationEngine.shutdown()
+        if (::visitFlowController.isInitialized) visitFlowController.shutdown()
         if (::localDataStore.isInitialized) localDataStore.close()
         super.onDestroy()
     }
