@@ -3,6 +3,7 @@ package com.billmanautovisit.app.screen
 import android.accessibilityservice.AccessibilityService
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
+import com.billmanautovisit.app.core.TaggingGate
 
 
 data class WorkOrderCandidate(
@@ -83,20 +84,24 @@ class ScreenReader(
     }
 
     fun isNodeOrClickableAncestorEnabled(node: AccessibilityNodeInfo): Boolean {
+        if (node.viewIdResourceName == BILLMAN_TAKE_PICTURE_ID && !TaggingGate.isReady()) {
+            return false
+        }
+
         var current: AccessibilityNodeInfo? = node
         repeat(8) {
             val candidate = current ?: return false
-            if (candidate.isClickable) return candidate.isEnabled
+            if (candidate.isEnabled && supportsClick(candidate)) return true
             current = candidate.parent
         }
-        return node.isEnabled
+        return node.isEnabled && supportsClick(node)
     }
 
     fun clickNode(node: AccessibilityNodeInfo): Boolean {
         var current: AccessibilityNodeInfo? = node
         repeat(8) {
             val candidate = current ?: return false
-            if (candidate.isClickable && candidate.isEnabled &&
+            if (candidate.isEnabled &&
                 candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             ) {
                 return true
@@ -119,6 +124,11 @@ class ScreenReader(
 
     fun performBack(): Boolean =
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+
+    private fun supportsClick(node: AccessibilityNodeInfo): Boolean =
+        node.isClickable || node.actionList.any { action ->
+            action.id == AccessibilityNodeInfo.ACTION_CLICK
+        }
 
     private fun nodeMatchesLabel(node: AccessibilityNodeInfo, label: String): Boolean {
         val values = listOfNotNull(
@@ -160,5 +170,9 @@ class ScreenReader(
             findFirst(child, predicate)?.let { return it }
         }
         return null
+    }
+
+    companion object {
+        private const val BILLMAN_TAKE_PICTURE_ID = "dev.iconpln.mims:id/btn_take_picture"
     }
 }
