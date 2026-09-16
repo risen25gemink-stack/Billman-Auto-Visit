@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.IBinder
 import com.billmanautovisit.app.MainActivity
 import com.billmanautovisit.app.R
+import com.billmanautovisit.app.core.AutomationRuntime
 
 class AutomationForegroundService : Service() {
 
@@ -26,14 +27,27 @@ class AutomationForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return when (intent?.action) {
+            ACTION_START -> {
+                AutomationRuntime.startSession()
+                startForeground(NOTIFICATION_ID, buildNotification())
+                START_STICKY
+            }
+
             ACTION_STOP -> {
+                AutomationRuntime.requestStop()
                 stopForeground(true)
                 stopSelf()
                 START_NOT_STICKY
             }
+
             else -> {
-                startForeground(NOTIFICATION_ID, buildNotification())
-                START_STICKY
+                if (AutomationRuntime.isRunning) {
+                    startForeground(NOTIFICATION_ID, buildNotification())
+                    START_STICKY
+                } else {
+                    stopSelf()
+                    START_NOT_STICKY
+                }
             }
         }
     }
@@ -74,7 +88,7 @@ class AutomationForegroundService : Service() {
         return android.app.Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(getString(R.string.notification_title))
-            .setContentText(getString(R.string.notification_text))
+            .setContentText("State: ${AutomationRuntime.currentState.name}")
             .setContentIntent(openAppPendingIntent)
             .setOngoing(true)
             .addAction(
