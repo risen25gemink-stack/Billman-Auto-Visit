@@ -10,8 +10,8 @@ android {
         applicationId = "com.billmanautovisit.app"
         minSdk = 26
         targetSdk = 32
-        versionCode = 8
-        versionName = "0.5.1-visit-confirmation-hotfix"
+        versionCode = 9
+        versionName = "0.5.2-visit-check-lunas-hotfix"
     }
 
     buildTypes {
