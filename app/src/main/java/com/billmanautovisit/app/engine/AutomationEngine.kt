@@ -1,6 +1,7 @@
 package com.billmanautovisit.app.engine
 
 import android.os.SystemClock
+import com.billmanautovisit.app.camera.CameraTapper
 import com.billmanautovisit.app.core.AutomationRuntime
 import com.billmanautovisit.app.core.AutomationState
 import com.billmanautovisit.app.data.LocalDataStore
@@ -16,6 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class AutomationEngine(
     private val screenReader: ScreenReader,
+    private val cameraTapper: CameraTapper,
     private val dataStore: LocalDataStore
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -23,6 +25,7 @@ class AutomationEngine(
 
     private var candidatesOnScreen: List<WorkOrderCandidate> = emptyList()
     private var currentRecordId: Long? = null
+    private var camera1RetryCount: Int = 0
 
     fun onBillmanEvent() {
         if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return
@@ -53,9 +56,13 @@ class AutomationEngine(
                 AutomationState.WAIT_CARD -> handleWaitCard()
                 AutomationState.TAP_CARD -> handleTapCard()
                 AutomationState.MENUJU_WO -> handleMenujuWo()
-                AutomationState.TAP_TAGGING -> {
+                AutomationState.TAP_TAGGING -> handleTapTagging()
+                AutomationState.TAP_CAMERA_1 -> handleTapCamera1()
+                AutomationState.CAMERA_SHUTTER_1 -> handleCameraShutter1()
+                AutomationState.BACK_TO_MENUJU_WO -> handleBackToMenujuWo()
+                AutomationState.TAP_VISIT -> {
                     AutomationRuntime.setStatus(
-                        "RUNNING: TAP_TAGGING — uji berhenti sebelum menekan Tagging"
+                        "RUNNING: TAP_VISIT — uji berhenti sebelum menekan Visit"
                     )
                     false
                 }
@@ -88,9 +95,7 @@ class AutomationEngine(
             "Ditemukan ${candidatesOnScreen.size} kandidat WO pada layar"
         )
 
-        if (candidatesOnScreen.isEmpty()) {
-            return false
-        }
+        if (candidatesOnScreen.isEmpty()) return false
 
         AutomationRuntime.transitionTo(AutomationState.READ_ID)
         return true
@@ -205,9 +210,7 @@ class AutomationEngine(
         }
 
         if (!AutomationRuntime.isRunning) return false
-        if (cardMarker == null) {
-            return skipWoNotFoundAndReturnToList()
-        }
+        if (cardMarker == null) return skipWoNotFoundAndReturnToList()
 
         currentRecordId?.let { dataStore.updateLastState(it, AutomationState.WAIT_CARD.name) }
         dataStore.addLog(
@@ -276,6 +279,143 @@ class AutomationEngine(
             "Layar Menuju WO terdeteksi"
         )
         AutomationRuntime.transitionTo(AutomationState.TAP_TAGGING)
+        return true
+    }
+
+    private suspend fun handleTapTagging(): Boolean {
+        val taggingNode = waitWithRetry(AutomationState.TAP_TAGGING) {
+            screenReader.findNodeByResourceId(BTN_TAGGING_ID)
+                ?: screenReader.findNodeByText("Tagging", exactMatch = true)
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (taggingNode == null) {
+            failCurrentState("Tombol Tagging tidak ditemukan")
+            return false
+        }
+
+        if (!screenReader.clickNode(taggingNode)) {
+            failCurrentState("Gagal menekan tombol Tagging")
+            return false
+        }
+
+        camera1RetryCount = 0
+        currentRecordId?.let { dataStore.updateLastState(it, AutomationState.TAP_TAGGING.name) }
+        dataStore.addLog(
+            currentRecordId,
+            AutomationState.TAP_TAGGING.name,
+            "INFO",
+            "Tombol Tagging ditekan"
+        )
+        AutomationRuntime.transitionTo(AutomationState.TAP_CAMERA_1)
+        return true
+    }
+
+    private suspend fun handleTapCamera1(): Boolean {
+        val cameraNode = waitWithRetry(AutomationState.TAP_CAMERA_1) {
+            screenReader.findNodeByResourceId(BTN_PHOTO_ID)
+                ?: screenReader.findNodeByText("Photo", exactMatch = true)
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (cameraNode == null) {
+            failCurrentState("Ikon/tombol kamera Photo tidak ditemukan")
+            return false
+        }
+
+        if (!screenReader.clickNode(cameraNode)) {
+            failCurrentState("Gagal membuka kamera tagging")
+            return false
+        }
+
+        currentRecordId?.let { dataStore.updateLastState(it, AutomationState.TAP_CAMERA_1.name) }
+        dataStore.addLog(
+            currentRecordId,
+            AutomationState.TAP_CAMERA_1.name,
+            "INFO",
+            "Kamera tagging dibuka"
+        )
+        AutomationRuntime.transitionTo(AutomationState.CAMERA_SHUTTER_1)
+        return true
+    }
+
+    private suspend fun handleCameraShutter1(): Boolean {
+        val shutter = poll(WAIT_TIMEOUT_MS) {
+            cameraTapper.findShutterNode()
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (shutter == null) {
+            return retryCamera1OrFail("Tombol shutter tidak terdeteksi")
+        }
+
+        if (!cameraTapper.tapShutter(shutter)) {
+            return retryCamera1OrFail("Tombol shutter terdeteksi tetapi gagal ditekan")
+        }
+
+        currentRecordId?.let {
+            dataStore.updateLastState(it, AutomationState.CAMERA_SHUTTER_1.name)
+        }
+        dataStore.addLog(
+            currentRecordId,
+            AutomationState.CAMERA_SHUTTER_1.name,
+            "INFO",
+            "Shutter kamera tagging ditekan"
+        )
+        AutomationRuntime.transitionTo(AutomationState.BACK_TO_MENUJU_WO)
+        return true
+    }
+
+    private suspend fun retryCamera1OrFail(reason: String): Boolean {
+        if (camera1RetryCount >= MAX_CAMERA_OPEN_RETRY) {
+            failCurrentState("$reason setelah retry kamera")
+            return false
+        }
+
+        camera1RetryCount += 1
+        dataStore.addLog(
+            currentRecordId,
+            AutomationState.CAMERA_SHUTTER_1.name,
+            "WARNING",
+            "$reason; buka ulang kamera 1x"
+        )
+
+        screenReader.performBack()
+        val returned = poll(WAIT_TIMEOUT_MS) {
+            if (screenReader.isTextVisible("Menuju WO", exactMatch = false)) true else null
+        }
+        if (returned != true) {
+            failCurrentState("Gagal kembali ke Menuju WO untuk retry kamera")
+            return false
+        }
+
+        AutomationRuntime.transitionTo(AutomationState.TAP_CAMERA_1)
+        return true
+    }
+
+    private suspend fun handleBackToMenujuWo(): Boolean {
+        val returned = waitWithRetry(AutomationState.BACK_TO_MENUJU_WO) {
+            val titleVisible = screenReader.isTextVisible("Menuju WO", exactMatch = false)
+            val visitVisible = screenReader.isTextVisible("Visit", exactMatch = true)
+            if (titleVisible && visitVisible) true else null
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (returned != true) {
+            failCurrentState("Tidak kembali ke layar Menuju WO setelah foto tagging")
+            return false
+        }
+
+        currentRecordId?.let {
+            dataStore.updateLastState(it, AutomationState.BACK_TO_MENUJU_WO.name)
+        }
+        dataStore.addLog(
+            currentRecordId,
+            AutomationState.BACK_TO_MENUJU_WO.name,
+            "INFO",
+            "Kembali ke Menuju WO setelah foto tagging"
+        )
+        AutomationRuntime.transitionTo(AutomationState.TAP_VISIT)
         return true
     }
 
@@ -368,5 +508,9 @@ class AutomationEngine(
         private const val WAIT_TIMEOUT_MS = 10_000L
         private const val MAX_RETRY_PER_STATE = 2
         private const val MAX_BACK_ATTEMPTS = 5
+        private const val MAX_CAMERA_OPEN_RETRY = 1
+
+        private const val BTN_TAGGING_ID = "dev.iconpln.mims:id/btn_tagging"
+        private const val BTN_PHOTO_ID = "dev.iconpln.mims:id/btn_photo"
     }
 }
