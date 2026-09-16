@@ -3,6 +3,8 @@ package com.billmanautovisit.app.data
 interface LocalDataStore {
     fun hasWorkOrderInSession(idPelanggan: String, sessionStartedAt: Long): Boolean
 
+    fun findActiveRecordId(idPelanggan: String, sessionStartedAt: Long): Long?
+
     fun beginWorkOrder(
         idPelanggan: String,
         kodeWo: String?,
