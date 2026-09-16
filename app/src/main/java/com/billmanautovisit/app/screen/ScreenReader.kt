@@ -82,11 +82,23 @@ class ScreenReader(
         return result
     }
 
+    fun isNodeOrClickableAncestorEnabled(node: AccessibilityNodeInfo): Boolean {
+        var current: AccessibilityNodeInfo? = node
+        repeat(8) {
+            val candidate = current ?: return false
+            if (candidate.isClickable) return candidate.isEnabled
+            current = candidate.parent
+        }
+        return node.isEnabled
+    }
+
     fun clickNode(node: AccessibilityNodeInfo): Boolean {
         var current: AccessibilityNodeInfo? = node
         repeat(8) {
             val candidate = current ?: return false
-            if (candidate.isClickable && candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            if (candidate.isClickable && candidate.isEnabled &&
+                candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            ) {
                 return true
             }
             current = candidate.parent
@@ -104,6 +116,9 @@ class ScreenReader(
         node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
     }
+
+    fun performBack(): Boolean =
+        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
 
     private fun nodeMatchesLabel(node: AccessibilityNodeInfo, label: String): Boolean {
         val values = listOfNotNull(
