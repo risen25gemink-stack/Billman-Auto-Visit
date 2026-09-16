@@ -42,3 +42,5 @@ gradle --no-daemon :app:assembleDebug
 
 ## Target Android
 `compileSdk = 36`, sedangkan `targetSdk = 32` untuk foundation awal agar permission foreground service tetap minimal sesuai dokumen acuan. Target SDK dapat dinaikkan setelah service baseline berhasil diuji di perangkat.
+
+Build trigger aktif.
