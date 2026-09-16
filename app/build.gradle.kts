@@ -10,8 +10,8 @@ android {
         applicationId = "com.billmanautovisit.app"
         minSdk = 26
         targetSdk = 32
-        versionCode = 5
-        versionName = "0.4.1-camera-hotfix"
+        versionCode = 6
+        versionName = "0.4.2-tagging-ready-hotfix"
     }
 
     buildTypes {
