@@ -21,7 +21,7 @@ class BillmanAccessibilityService : AccessibilityService() {
         screenReader = ScreenReader(this)
         cameraTapper = CameraTapper(this)
         localDataStore = SqliteLocalDataStore(applicationContext)
-        automationEngine = AutomationEngine(screenReader, localDataStore)
+        automationEngine = AutomationEngine(screenReader, cameraTapper, localDataStore)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
