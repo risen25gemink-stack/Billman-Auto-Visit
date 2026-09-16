@@ -10,6 +10,10 @@ object AutomationRuntime {
         private set
 
     @Volatile
+    var currentKodeWo: String? = null
+        private set
+
+    @Volatile
     var isRunning: Boolean = false
         private set
 
@@ -29,6 +33,7 @@ object AutomationRuntime {
         sessionStartedAt = System.currentTimeMillis()
         currentState = AutomationState.WO_LIST
         currentIdPelanggan = null
+        currentKodeWo = null
         stopRequested = false
         isRunning = true
         statusMessage = "RUNNING: WO_LIST"
@@ -37,6 +42,11 @@ object AutomationRuntime {
     fun transitionTo(state: AutomationState) {
         currentState = state
         statusMessage = "RUNNING: ${state.name}"
+    }
+
+    fun setCurrentWorkOrder(idPelanggan: String?, kodeWo: String?) {
+        currentIdPelanggan = idPelanggan
+        currentKodeWo = kodeWo
     }
 
     fun setCurrentId(idPelanggan: String?) {
