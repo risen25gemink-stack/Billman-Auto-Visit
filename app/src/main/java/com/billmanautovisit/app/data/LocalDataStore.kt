@@ -12,6 +12,13 @@ interface LocalDataStore {
 
     fun updateLastState(recordId: Long, state: String)
 
+    fun markSkipped(
+        recordId: Long,
+        lastState: String,
+        message: String,
+        finishedAt: Long
+    )
+
     fun addLog(
         workOrderRecordId: Long?,
         state: String,
