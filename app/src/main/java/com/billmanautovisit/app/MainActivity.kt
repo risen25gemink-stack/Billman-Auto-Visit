@@ -15,12 +15,14 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.billmanautovisit.app.accessibility.BillmanAccessibilityService
+import com.billmanautovisit.app.core.AutomationRuntime
 import com.billmanautovisit.app.service.AutomationForegroundService
 
 class MainActivity : Activity() {
 
     private lateinit var accessibilityStatus: TextView
     private lateinit var currentStatus: TextView
+    private lateinit var processedId: TextView
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
 
@@ -32,7 +34,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        refreshAccessibilityStatus()
+        refreshUiState()
     }
 
     private fun buildContentView(): ScrollView {
@@ -62,15 +64,15 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(18), dp(12), dp(18))
         }
 
-        val processedId = TextView(this).apply {
+        processedId = TextView(this).apply {
             text = "ID Pelanggan diproses: -"
             textSize = 15f
             setPadding(0, dp(16), 0, dp(6))
         }
 
-        val completedCount = TextView(this).apply {
-            text = "WO selesai sesi ini: 0"
-            textSize = 15f
+        val phaseInfo = TextView(this).apply {
+            text = "Build uji: WO_LIST → READ_ID → INPUT_ID. Berhenti otomatis sebelum tap Cari."
+            textSize = 14f
             setPadding(0, 0, 0, dp(18))
         }
 
@@ -109,7 +111,7 @@ class MainActivity : Activity() {
         }
 
         val logBody = TextView(this).apply {
-            text = "Belum ada aktivitas."
+            text = "Log detail disimpan lokal di SQLite untuk debugging."
             textSize = 14f
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
@@ -125,7 +127,7 @@ class MainActivity : Activity() {
         container.addView(accessibilityStatus)
         container.addView(currentStatus)
         container.addView(processedId)
-        container.addView(completedCount)
+        container.addView(phaseInfo)
         container.addView(buttonRow)
         container.addView(logTitle)
         container.addView(logBody)
@@ -153,7 +155,8 @@ class MainActivity : Activity() {
                 startService(intent)
             }
 
-            currentStatus.text = "Status Saat Ini: RUNNING (foundation)"
+            currentStatus.text = "Status Saat Ini: RUNNING: WO_LIST"
+            processedId.text = "ID Pelanggan diproses: -"
             startButton.isEnabled = false
             stopButton.isEnabled = true
             moveTaskToBack(true)
@@ -170,14 +173,18 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun refreshAccessibilityStatus() {
+    private fun refreshUiState() {
         val enabled = isAccessibilityServiceEnabled()
         accessibilityStatus.text = if (enabled) {
             "Status Accessibility: ● Aktif"
         } else {
             "Status Accessibility: ● Tidak Aktif"
         }
-        startButton.isEnabled = enabled
+
+        currentStatus.text = "Status Saat Ini: ${AutomationRuntime.statusMessage}"
+        processedId.text = "ID Pelanggan diproses: ${AutomationRuntime.currentIdPelanggan ?: "-"}"
+        startButton.isEnabled = enabled && !AutomationRuntime.isRunning
+        stopButton.isEnabled = AutomationRuntime.isRunning
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
