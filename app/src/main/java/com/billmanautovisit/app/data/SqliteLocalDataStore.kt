@@ -67,6 +67,21 @@ class SqliteLocalDataStore(context: Context) :
         }
     }
 
+    override fun findActiveRecordId(idPelanggan: String, sessionStartedAt: Long): Long? {
+        readableDatabase.query(
+            "work_order_records",
+            arrayOf("id"),
+            "id_pelanggan = ? AND started_at >= ? AND status = ?",
+            arrayOf(idPelanggan, sessionStartedAt.toString(), "IN_PROGRESS"),
+            null,
+            null,
+            "id DESC",
+            "1"
+        ).use { cursor ->
+            return if (cursor.moveToFirst()) cursor.getLong(0) else null
+        }
+    }
+
     override fun beginWorkOrder(
         idPelanggan: String,
         kodeWo: String?,
