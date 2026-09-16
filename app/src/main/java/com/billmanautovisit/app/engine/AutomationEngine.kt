@@ -49,8 +49,14 @@ class AutomationEngine(
                 AutomationState.WO_LIST -> handleWoList()
                 AutomationState.READ_ID -> handleReadId()
                 AutomationState.INPUT_ID -> handleInputId()
-                AutomationState.TAP_CARI -> {
-                    AutomationRuntime.setStatus("RUNNING: TAP_CARI — uji berhenti sebelum tombol Cari")
+                AutomationState.TAP_CARI -> handleTapCari()
+                AutomationState.WAIT_CARD -> handleWaitCard()
+                AutomationState.TAP_CARD -> handleTapCard()
+                AutomationState.MENUJU_WO -> handleMenujuWo()
+                AutomationState.TAP_TAGGING -> {
+                    AutomationRuntime.setStatus(
+                        "RUNNING: TAP_TAGGING — uji berhenti sebelum menekan Tagging"
+                    )
                     false
                 }
                 else -> false
@@ -83,7 +89,6 @@ class AutomationEngine(
         )
 
         if (candidatesOnScreen.isEmpty()) {
-            // READ_ID hanya boleh dimasuki jika minimal satu kandidat terdeteksi.
             return false
         }
 
@@ -108,7 +113,10 @@ class AutomationEngine(
             startedAt = System.currentTimeMillis()
         )
 
-        AutomationRuntime.setCurrentId(candidate.idPelanggan)
+        AutomationRuntime.setCurrentWorkOrder(
+            idPelanggan = candidate.idPelanggan,
+            kodeWo = candidate.kodeWo
+        )
         dataStore.addLog(
             currentRecordId,
             AutomationState.READ_ID.name,
@@ -157,6 +165,167 @@ class AutomationEngine(
         return true
     }
 
+    private suspend fun handleTapCari(): Boolean {
+        val button = waitWithRetry(AutomationState.TAP_CARI) {
+            screenReader.findNodeByText("Cari", exactMatch = true)
+                ?.takeIf { screenReader.isNodeOrClickableAncestorEnabled(it) }
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (button == null) {
+            failCurrentState("Tombol Cari aktif tidak ditemukan")
+            return false
+        }
+
+        if (!screenReader.clickNode(button)) {
+            failCurrentState("Gagal menekan tombol Cari")
+            return false
+        }
+
+        currentRecordId?.let { dataStore.updateLastState(it, AutomationState.TAP_CARI.name) }
+        dataStore.addLog(
+            currentRecordId,
+            AutomationState.TAP_CARI.name,
+            "INFO",
+            "Tombol Cari ditekan"
+        )
+        AutomationRuntime.transitionTo(AutomationState.WAIT_CARD)
+        return true
+    }
+
+    private suspend fun handleWaitCard(): Boolean {
+        val kodeWo = AutomationRuntime.currentKodeWo
+        if (kodeWo.isNullOrBlank()) {
+            failCurrentState("Kode WO aktif kosong")
+            return false
+        }
+
+        val cardMarker = waitWithRetry(AutomationState.WAIT_CARD) {
+            screenReader.findNodeByText(kodeWo, exactMatch = false)
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (cardMarker == null) {
+            return skipWoNotFoundAndReturnToList()
+        }
+
+        currentRecordId?.let { dataStore.updateLastState(it, AutomationState.WAIT_CARD.name) }
+        dataStore.addLog(
+            currentRecordId,
+            AutomationState.WAIT_CARD.name,
+            "INFO",
+            "Card assignment untuk $kodeWo terdeteksi"
+        )
+        AutomationRuntime.transitionTo(AutomationState.TAP_CARD)
+        return true
+    }
+
+    private suspend fun handleTapCard(): Boolean {
+        val kodeWo = AutomationRuntime.currentKodeWo
+        if (kodeWo.isNullOrBlank()) {
+            failCurrentState("Kode WO aktif kosong")
+            return false
+        }
+
+        val cardMarker = waitWithRetry(AutomationState.TAP_CARD) {
+            screenReader.findNodeByText(kodeWo, exactMatch = false)
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (cardMarker == null) {
+            failCurrentState("Card assignment $kodeWo tidak ditemukan saat akan ditap")
+            return false
+        }
+
+        if (!screenReader.clickNode(cardMarker)) {
+            failCurrentState("Card assignment $kodeWo tidak dapat ditap")
+            return false
+        }
+
+        currentRecordId?.let { dataStore.updateLastState(it, AutomationState.TAP_CARD.name) }
+        dataStore.addLog(
+            currentRecordId,
+            AutomationState.TAP_CARD.name,
+            "INFO",
+            "Card assignment $kodeWo ditekan"
+        )
+        AutomationRuntime.transitionTo(AutomationState.MENUJU_WO)
+        return true
+    }
+
+    private suspend fun handleMenujuWo(): Boolean {
+        val detected = waitWithRetry(AutomationState.MENUJU_WO) {
+            val titleVisible = screenReader.isTextVisible("Menuju WO", exactMatch = false)
+            val navigasiVisible = screenReader.isTextVisible("Navigasi", exactMatch = false)
+            val photoVisible = screenReader.isTextVisible("Photo", exactMatch = false)
+            val taggingVisible = screenReader.isTextVisible("Tagging", exactMatch = false)
+            if (titleVisible && navigasiVisible && photoVisible && taggingVisible) true else null
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (detected != true) {
+            failCurrentState("Layar Menuju WO tidak terdeteksi lengkap")
+            return false
+        }
+
+        currentRecordId?.let { dataStore.updateLastState(it, AutomationState.MENUJU_WO.name) }
+        dataStore.addLog(
+            currentRecordId,
+            AutomationState.MENUJU_WO.name,
+            "INFO",
+            "Layar Menuju WO terdeteksi"
+        )
+        AutomationRuntime.transitionTo(AutomationState.TAP_TAGGING)
+        return true
+    }
+
+    private suspend fun skipWoNotFoundAndReturnToList(): Boolean {
+        val recordId = currentRecordId
+        val message = "WO tidak ditemukan"
+
+        if (recordId != null) {
+            dataStore.markSkipped(
+                recordId = recordId,
+                lastState = AutomationState.WAIT_CARD.name,
+                message = message,
+                finishedAt = System.currentTimeMillis()
+            )
+        }
+        dataStore.addLog(
+            recordId,
+            AutomationState.WAIT_CARD.name,
+            "WARNING",
+            message
+        )
+
+        repeat(MAX_BACK_ATTEMPTS) { attempt ->
+            if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return false
+
+            if (!screenReader.performBack()) {
+                dataStore.addLog(
+                    recordId,
+                    AutomationState.WAIT_CARD.name,
+                    "WARNING",
+                    "GLOBAL_ACTION_BACK gagal pada percobaan ${attempt + 1}"
+                )
+            }
+
+            val backAtList = poll(WAIT_TIMEOUT_MS) {
+                if (screenReader.isTextVisible("Pilih Work Order", exactMatch = false)) true else null
+            }
+            if (backAtList == true) {
+                currentRecordId = null
+                candidatesOnScreen = emptyList()
+                AutomationRuntime.setCurrentWorkOrder(null, null)
+                AutomationRuntime.transitionTo(AutomationState.WO_LIST)
+                return true
+            }
+        }
+
+        failCurrentState("Gagal kembali ke Pilih Work Order setelah WO tidak ditemukan")
+        return false
+    }
+
     private suspend fun <T> waitWithRetry(
         state: AutomationState,
         block: () -> T?
@@ -198,5 +367,6 @@ class AutomationEngine(
         private const val POLL_INTERVAL_MS = 300L
         private const val WAIT_TIMEOUT_MS = 10_000L
         private const val MAX_RETRY_PER_STATE = 2
+        private const val MAX_BACK_ATTEMPTS = 5
     }
 }
