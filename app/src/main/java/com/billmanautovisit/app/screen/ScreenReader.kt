@@ -111,6 +111,16 @@ class ScreenReader(
         return false
     }
 
+    fun scrollForwardOnce(): Boolean {
+        val root = currentRoot() ?: return false
+        val scrollable = findFirst(root) { node ->
+            node.isVisibleToUser && node.isScrollable
+        } ?: return false
+
+        return scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) ||
+            scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_DOWN)
+    }
+
     fun setText(node: AccessibilityNodeInfo, value: String): Boolean {
         val arguments = Bundle().apply {
             putCharSequence(
