@@ -102,7 +102,53 @@ class VisitFlowController(
 
         updateStateAndLog(
             AutomationState.TAP_VISIT,
-            "Tombol Visit ditekan"
+            "Tombol Visit ditekan; menunggu dialog konfirmasi"
+        )
+
+        val dialogVisible = waitWithRetry(AutomationState.TAP_VISIT) {
+            if (
+                screenReader.isTextVisible(
+                    VISIT_CONFIRMATION_TEXT,
+                    exactMatch = false
+                )
+            ) {
+                true
+            } else {
+                null
+            }
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (dialogVisible != true) {
+            failCurrentState("Dialog konfirmasi Visit tidak muncul")
+            return false
+        }
+
+        val yesButton = waitWithRetry(AutomationState.TAP_VISIT) {
+            if (!screenReader.isTextVisible(VISIT_CONFIRMATION_TEXT, exactMatch = false)) {
+                null
+            } else {
+                screenReader.findNodeByText("Ya", exactMatch = true)
+                    ?.takeIf {
+                        it.isVisibleToUser && screenReader.isNodeOrClickableAncestorEnabled(it)
+                    }
+            }
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (yesButton == null) {
+            failCurrentState("Tombol Ya pada dialog konfirmasi Visit tidak ditemukan/aktif")
+            return false
+        }
+
+        if (!screenReader.clickNode(yesButton)) {
+            failCurrentState("Gagal menekan Ya pada dialog konfirmasi Visit")
+            return false
+        }
+
+        updateStateAndLog(
+            AutomationState.TAP_VISIT,
+            "Konfirmasi Visit: Ya ditekan"
         )
         AutomationRuntime.transitionTo(AutomationState.VISIT_WO_SCREEN)
         return true
@@ -311,5 +357,7 @@ class VisitFlowController(
         private const val BTN_VISIT_ID = "dev.iconpln.mims:id/btn_visit"
         private const val BTN_PHOTO_INVOICE_ID =
             "dev.iconpln.mims:id/btn_photo_penyerahan_invoice"
+        private const val VISIT_CONFIRMATION_TEXT =
+            "Anda yakin ingin mengunjungi rumah ini"
     }
 }
