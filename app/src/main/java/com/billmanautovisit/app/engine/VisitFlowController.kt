@@ -1,6 +1,7 @@
 package com.billmanautovisit.app.engine
 
 import android.os.SystemClock
+import android.view.accessibility.AccessibilityNodeInfo
 import com.billmanautovisit.app.camera.CameraTapper
 import com.billmanautovisit.app.core.AutomationRuntime
 import com.billmanautovisit.app.core.AutomationState
@@ -57,7 +58,15 @@ class VisitFlowController(
                 AutomationState.VISIT_WO_SCREEN -> handleVisitWoScreen()
                 AutomationState.TAP_CAMERA_2 -> handleTapCamera2()
                 AutomationState.CAMERA_SHUTTER_2 -> handleCameraShutter2()
-                AutomationState.CHECK_LUNAS -> handleCheckLunasCheckpoint()
+                AutomationState.CHECK_LUNAS -> handleCheckLunas()
+                AutomationState.CHECK_WAJIB -> handleCheckWajib()
+                AutomationState.INPUT_MIGRASI -> handleInputMigrasi()
+                AutomationState.TAP_CAMERA_3 -> {
+                    AutomationRuntime.setStatus(
+                        "RUNNING: TAP_CAMERA_3 — uji berhenti setelah migrasi Ya dipilih"
+                    )
+                    false
+                }
                 else -> false
             }
 
@@ -81,7 +90,6 @@ class VisitFlowController(
         repeat(MAX_RETRY_PER_STATE + 1) { attempt ->
             if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return false
 
-            // Jika popup muncul sedikit terlambat dari click sebelumnya, jangan menekan Visit lagi.
             if (isVisitConfirmationVisible()) {
                 dialogConfirmed = true
                 return@repeat
@@ -291,45 +299,158 @@ class VisitFlowController(
         return true
     }
 
-    private suspend fun handleCheckLunasCheckpoint(): Boolean {
-        val sectionVisible = waitWithRetry(AutomationState.CHECK_LUNAS) {
-            val card = screenReader.findNodeByResourceId(CARD_STATUS_PELUNASAN_ID)
-            val radio = screenReader.findNodeByResourceId(RADIO_LUNAS_MANDIRI_ID)
-            val textVisible = screenReader.isTextVisible("Status Pelunasan", exactMatch = false)
-            val lunasMandiriVisible = screenReader.isTextVisible("Lunas Mandiri", exactMatch = false)
-
-            if (
-                card?.isVisibleToUser == true ||
-                radio?.isVisibleToUser == true ||
-                textVisible ||
-                lunasMandiriVisible
-            ) {
-                true
-            } else {
-                screenReader.scrollForwardOnce()
-                null
-            }
-        }
+    private suspend fun handleCheckLunas(): Boolean {
+        val radio = waitForVisibleNode(
+            state = AutomationState.CHECK_LUNAS,
+            resourceId = RADIO_LUNAS_MANDIRI_ID,
+            fallbackText = "Lunas Mandiri"
+        )
 
         if (!AutomationRuntime.isRunning) return false
-        if (sectionVisible != true) {
-            failCurrentState("Section Status Pelunasan / Lunas Mandiri tidak ditemukan setelah scroll")
+        if (radio == null) {
+            failCurrentState("Radio Lunas Mandiri tidak ditemukan setelah scroll")
             return false
         }
 
-        currentRecordId?.let {
-            dataStore.updateLastState(it, AutomationState.CHECK_LUNAS.name)
+        if (!ensureChecked(
+                state = AutomationState.CHECK_LUNAS,
+                resourceId = RADIO_LUNAS_MANDIRI_ID,
+                initialNode = radio,
+                label = "Lunas Mandiri"
+            )
+        ) {
+            failCurrentState("Lunas Mandiri gagal dipilih")
+            return false
         }
-        dataStore.addLog(
-            currentRecordId,
-            AutomationState.CHECK_LUNAS.name,
-            "INFO",
-            "Section Status Pelunasan ditemukan; uji berhenti sebelum mencentang Lunas Mandiri"
+
+        updateStateAndLog(
+            AutomationState.CHECK_LUNAS,
+            "Lunas Mandiri terpilih"
         )
+        AutomationRuntime.transitionTo(AutomationState.CHECK_WAJIB)
+        return true
+    }
+
+    private suspend fun handleCheckWajib(): Boolean {
+        val checkboxIds = listOf(
+            CB_INFORMASI_TAGIHAN_ID to "Informasi tagihan",
+            CB_TANGGAL_PELUNASAN_ID to "Tanggal pelunasan",
+            CB_INFORMASI_KONSEKUENSI_ID to "Informasi konsekuensi"
+        )
+
+        checkboxIds.forEachIndexed { index, (resourceId, label) ->
+            val node = waitForVisibleNode(
+                state = AutomationState.CHECK_WAJIB,
+                resourceId = resourceId,
+                fallbackText = null
+            )
+
+            if (!AutomationRuntime.isRunning) return false
+            if (node == null) {
+                failCurrentState("Checkbox Wajib Disampaikan ke-${index + 1} ($label) tidak ditemukan")
+                return false
+            }
+
+            if (!ensureChecked(
+                    state = AutomationState.CHECK_WAJIB,
+                    resourceId = resourceId,
+                    initialNode = node,
+                    label = label
+                )
+            ) {
+                failCurrentState("Checkbox Wajib Disampaikan ke-${index + 1} ($label) gagal dicentang")
+                return false
+            }
+
+            dataStore.addLog(
+                currentRecordId,
+                AutomationState.CHECK_WAJIB.name,
+                "INFO",
+                "Checkbox Wajib Disampaikan ke-${index + 1} dicentang: $label"
+            )
+        }
+
+        currentRecordId?.let {
+            dataStore.updateLastState(it, AutomationState.CHECK_WAJIB.name)
+        }
+        AutomationRuntime.transitionTo(AutomationState.INPUT_MIGRASI)
+        return true
+    }
+
+    private suspend fun handleInputMigrasi(): Boolean {
+        val yesRadio = waitForVisibleNode(
+            state = AutomationState.INPUT_MIGRASI,
+            resourceId = RB_PRABAYAR_YA_ID,
+            fallbackText = "Ya"
+        )
+
+        if (!AutomationRuntime.isRunning) return false
+        if (yesRadio == null) {
+            failCurrentState("Radio Ya untuk migrasi prabayar tidak ditemukan setelah scroll")
+            return false
+        }
+
+        if (!ensureChecked(
+                state = AutomationState.INPUT_MIGRASI,
+                resourceId = RB_PRABAYAR_YA_ID,
+                initialNode = yesRadio,
+                label = "Migrasi prabayar: Ya"
+            )
+        ) {
+            failCurrentState("Radio Ya migrasi prabayar gagal dipilih")
+            return false
+        }
+
+        updateStateAndLog(
+            AutomationState.INPUT_MIGRASI,
+            "Migrasi prabayar dipilih Ya; Nama Penghuni dan Input Nomor WA tidak disentuh"
+        )
+        AutomationRuntime.transitionTo(AutomationState.TAP_CAMERA_3)
         AutomationRuntime.setStatus(
-            "RUNNING: CHECK_LUNAS — Status Pelunasan ditemukan; uji berhenti sebelum Lunas Mandiri"
+            "RUNNING: TAP_CAMERA_3 — uji berhenti setelah migrasi Ya dipilih"
         )
         return false
+    }
+
+    private suspend fun waitForVisibleNode(
+        state: AutomationState,
+        resourceId: String,
+        fallbackText: String?
+    ): AccessibilityNodeInfo? = waitWithRetry(state) {
+        val byId = screenReader.findNodeByResourceId(resourceId)
+        val byText = fallbackText?.let { screenReader.findNodeByText(it, exactMatch = true) }
+        val node = byId ?: byText
+
+        if (node != null && node.isVisibleToUser) {
+            node
+        } else {
+            screenReader.scrollForwardOnce()
+            null
+        }
+    }
+
+    private suspend fun ensureChecked(
+        state: AutomationState,
+        resourceId: String,
+        initialNode: AccessibilityNodeInfo,
+        label: String
+    ): Boolean {
+        if (initialNode.isChecked) return true
+
+        if (!screenReader.clickNode(initialNode)) {
+            dataStore.addLog(
+                currentRecordId,
+                state.name,
+                "WARNING",
+                "ACTION_CLICK gagal untuk $label"
+            )
+            return false
+        }
+
+        return poll(CHECK_STATE_TIMEOUT_MS) {
+            val refreshed = screenReader.findNodeByResourceId(resourceId)
+            if (refreshed?.isChecked == true) true else null
+        } == true
     }
 
     private suspend fun retryCamera2OrFail(reason: String): Boolean {
@@ -417,11 +538,15 @@ class VisitFlowController(
             state == AutomationState.VISIT_WO_SCREEN ||
             state == AutomationState.TAP_CAMERA_2 ||
             state == AutomationState.CAMERA_SHUTTER_2 ||
-            state == AutomationState.CHECK_LUNAS
+            state == AutomationState.CHECK_LUNAS ||
+            state == AutomationState.CHECK_WAJIB ||
+            state == AutomationState.INPUT_MIGRASI ||
+            state == AutomationState.TAP_CAMERA_3
 
     companion object {
         private const val POLL_INTERVAL_MS = 300L
         private const val WAIT_TIMEOUT_MS = 10_000L
+        private const val CHECK_STATE_TIMEOUT_MS = 3_000L
         private const val MAX_RETRY_PER_STATE = 2
         private const val MAX_CAMERA_OPEN_RETRY = 1
         private const val STATE_HANDOFF_POLL_MS = 100L
@@ -431,10 +556,16 @@ class VisitFlowController(
         private const val BTN_VISIT_ID = "dev.iconpln.mims:id/btn_visit"
         private const val BTN_PHOTO_INVOICE_ID =
             "dev.iconpln.mims:id/btn_photo_penyerahan_invoice"
-        private const val CARD_STATUS_PELUNASAN_ID =
-            "dev.iconpln.mims:id/card_status_pelunasan"
         private const val RADIO_LUNAS_MANDIRI_ID =
             "dev.iconpln.mims:id/radio_lunas_mandiri"
+        private const val CB_INFORMASI_TAGIHAN_ID =
+            "dev.iconpln.mims:id/cb_informasi_tagihan"
+        private const val CB_TANGGAL_PELUNASAN_ID =
+            "dev.iconpln.mims:id/cb_tanggal_pelunasan"
+        private const val CB_INFORMASI_KONSEKUENSI_ID =
+            "dev.iconpln.mims:id/cb_informasi_konsekuensi"
+        private const val RB_PRABAYAR_YA_ID =
+            "dev.iconpln.mims:id/rb_prabayar_ya"
         private const val VISIT_CONFIRMATION_TEXT =
             "Anda yakin ingin mengunjungi rumah ini"
     }
