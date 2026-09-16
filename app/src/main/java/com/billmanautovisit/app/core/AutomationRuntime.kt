@@ -36,10 +36,14 @@ object AutomationRuntime {
         currentKodeWo = null
         stopRequested = false
         isRunning = true
+        TaggingGate.reset()
         statusMessage = "RUNNING: WO_LIST"
     }
 
     fun transitionTo(state: AutomationState) {
+        if (state == AutomationState.TAP_TAGGING) {
+            TaggingGate.reset()
+        }
         currentState = state
         statusMessage = "RUNNING: ${state.name}"
     }
@@ -60,12 +64,14 @@ object AutomationRuntime {
     fun requestStop() {
         stopRequested = true
         isRunning = false
+        TaggingGate.reset()
         statusMessage = "IDLE"
     }
 
     fun fail(message: String) {
         stopRequested = true
         isRunning = false
+        TaggingGate.reset()
         statusMessage = "ERROR: $message"
     }
 }
