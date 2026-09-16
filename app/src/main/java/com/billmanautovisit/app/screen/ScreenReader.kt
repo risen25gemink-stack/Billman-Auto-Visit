@@ -117,8 +117,7 @@ class ScreenReader(
             node.isVisibleToUser && node.isScrollable
         } ?: return false
 
-        return scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) ||
-            scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_DOWN)
+        return scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
     }
 
     fun setText(node: AccessibilityNodeInfo, value: String): Boolean {
