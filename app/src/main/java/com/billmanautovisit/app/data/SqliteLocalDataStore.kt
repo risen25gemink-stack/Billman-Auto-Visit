@@ -95,6 +95,26 @@ class SqliteLocalDataStore(context: Context) :
         )
     }
 
+    override fun markSkipped(
+        recordId: Long,
+        lastState: String,
+        message: String,
+        finishedAt: Long
+    ) {
+        val values = ContentValues().apply {
+            put("status", "SKIPPED")
+            put("last_state", lastState)
+            put("error_message", message)
+            put("finished_at", finishedAt)
+        }
+        writableDatabase.update(
+            "work_order_records",
+            values,
+            "id = ?",
+            arrayOf(recordId.toString())
+        )
+    }
+
     override fun addLog(
         workOrderRecordId: Long?,
         state: String,
