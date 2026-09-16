@@ -165,7 +165,6 @@ class AutomationEngine(
             "INFO",
             "ID pelanggan diisi ke field pencarian"
         )
-
         AutomationRuntime.transitionTo(AutomationState.TAP_CARI)
         return true
     }
@@ -313,18 +312,18 @@ class AutomationEngine(
 
     private suspend fun handleTapCamera1(): Boolean {
         val cameraNode = waitWithRetry(AutomationState.TAP_CAMERA_1) {
-            screenReader.findNodeByResourceId(BTN_PHOTO_ID)
-                ?: screenReader.findNodeByText("Photo", exactMatch = true)
+            screenReader.findNodeByResourceId(BTN_TAKE_PICTURE_ID)
+                ?.takeIf { screenReader.isNodeOrClickableAncestorEnabled(it) }
         }
 
         if (!AutomationRuntime.isRunning) return false
         if (cameraNode == null) {
-            failCurrentState("Ikon/tombol kamera Photo tidak ditemukan")
+            failCurrentState("Ikon kamera besar pada area foto tidak ditemukan/aktif")
             return false
         }
 
         if (!screenReader.clickNode(cameraNode)) {
-            failCurrentState("Gagal membuka kamera tagging")
+            failCurrentState("Gagal menekan ikon kamera besar pada area foto")
             return false
         }
 
@@ -333,7 +332,7 @@ class AutomationEngine(
             currentRecordId,
             AutomationState.TAP_CAMERA_1.name,
             "INFO",
-            "Kamera tagging dibuka"
+            "Ikon kamera besar area foto ditekan"
         )
         AutomationRuntime.transitionTo(AutomationState.CAMERA_SHUTTER_1)
         return true
@@ -511,6 +510,6 @@ class AutomationEngine(
         private const val MAX_CAMERA_OPEN_RETRY = 1
 
         private const val BTN_TAGGING_ID = "dev.iconpln.mims:id/btn_tagging"
-        private const val BTN_PHOTO_ID = "dev.iconpln.mims:id/btn_photo"
+        private const val BTN_TAKE_PICTURE_ID = "dev.iconpln.mims:id/btn_take_picture"
     }
 }
