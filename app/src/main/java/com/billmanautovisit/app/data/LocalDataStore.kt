@@ -1,5 +1,12 @@
 package com.billmanautovisit.app.data
 
+data class SessionStats(
+    val completed: Int,
+    val skipped: Int,
+    val inProgress: Int,
+    val totalSeen: Int
+)
+
 interface LocalDataStore {
     fun hasWorkOrderInSession(idPelanggan: String, sessionStartedAt: Long): Boolean
 
@@ -33,6 +40,8 @@ interface LocalDataStore {
         level: String,
         message: String
     )
+
+    fun getSessionStats(sessionStartedAt: Long): SessionStats
 
     fun close()
 }
