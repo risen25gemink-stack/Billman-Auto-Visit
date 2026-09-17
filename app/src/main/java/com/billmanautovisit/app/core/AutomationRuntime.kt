@@ -14,6 +14,10 @@ object AutomationRuntime {
         private set
 
     @Volatile
+    var selectedFlow: AutomationFlow = AutomationFlow.LUNAS_MANDIRI
+        private set
+
+    @Volatile
     var isRunning: Boolean = false
         private set
 
@@ -45,7 +49,8 @@ object AutomationRuntime {
     var totalPages: Int? = null
         private set
 
-    fun startSession() {
+    fun startSession(flow: AutomationFlow = AutomationFlow.LUNAS_MANDIRI) {
+        selectedFlow = flow
         sessionStartedAt = System.currentTimeMillis()
         currentState = AutomationState.WO_LIST
         currentIdPelanggan = null
@@ -55,9 +60,9 @@ object AutomationRuntime {
         isRunning = true
         currentPage = null
         totalPages = null
-        latestAction = "Memulai sesi automasi"
+        latestAction = "Memulai sesi: ${flow.displayName}"
         TaggingGate.reset()
-        statusMessage = "RUNNING: WO_LIST"
+        statusMessage = "RUNNING: WO_LIST — ${flow.displayName}"
     }
 
     fun transitionTo(state: AutomationState) {
