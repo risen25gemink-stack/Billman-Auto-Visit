@@ -24,6 +24,8 @@ class BillmanAccessibilityService : AccessibilityService() {
     private lateinit var finalFlowController: FinalFlowController
     private lateinit var trackingOverlay: TrackingOverlayController
 
+    private var residentNamePreparedForId: String? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         screenReader = ScreenReader(this)
@@ -67,6 +69,14 @@ class BillmanAccessibilityService : AccessibilityService() {
         if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return
 
         val stateBeforeDispatch = AutomationRuntime.currentState
+
+        if (
+            stateBeforeDispatch == AutomationState.INPUT_MIGRASI &&
+            !ensureResidentNameIsUser()
+        ) {
+            return
+        }
+
         automationEngine.onBillmanEvent()
 
         if (
@@ -90,6 +100,52 @@ class BillmanAccessibilityService : AccessibilityService() {
         ) {
             finalFlowController.onBillmanEvent()
         }
+    }
+
+    private fun ensureResidentNameIsUser(): Boolean {
+        val activeId = AutomationRuntime.currentIdPelanggan ?: return false
+        if (residentNamePreparedForId == activeId) return true
+
+        val field = screenReader.findEditableFieldByLabel(RESIDENT_NAME_LABEL)
+        if (field == null || !field.isVisibleToUser) {
+            screenReader.scrollForwardOnce()
+            AutomationRuntime.setStatus(
+                "RUNNING: INPUT_MIGRASI — mencari field Nama Penghuni"
+            )
+            AutomationRuntime.setLatestAction("Mencari field Nama Penghuni")
+            return false
+        }
+
+        val currentValue = field.text?.toString()?.trim().orEmpty()
+        if (currentValue == RESIDENT_NAME_VALUE) {
+            residentNamePreparedForId = activeId
+            AutomationRuntime.setLatestAction("Nama Penghuni terverifikasi: USER")
+            return true
+        }
+
+        screenReader.clickNode(field)
+        val textSet = screenReader.setText(field, RESIDENT_NAME_VALUE)
+        if (!textSet) {
+            AutomationRuntime.setStatus(
+                "RUNNING: INPUT_MIGRASI — mencoba ulang Nama Penghuni"
+            )
+            AutomationRuntime.setLatestAction("Gagal mengisi Nama Penghuni; mencoba ulang")
+            return false
+        }
+
+        val refreshed = screenReader.findEditableFieldByLabel(RESIDENT_NAME_LABEL)
+        val verified = refreshed?.text?.toString()?.trim() == RESIDENT_NAME_VALUE
+        if (!verified) {
+            AutomationRuntime.setStatus(
+                "RUNNING: INPUT_MIGRASI — memverifikasi Nama Penghuni"
+            )
+            AutomationRuntime.setLatestAction("Nama Penghuni diisi USER; menunggu verifikasi")
+            return false
+        }
+
+        residentNamePreparedForId = activeId
+        AutomationRuntime.setLatestAction("Nama Penghuni diisi otomatis: USER")
+        return true
     }
 
     private fun captureTaggingResult(event: AccessibilityEvent) {
@@ -130,5 +186,7 @@ class BillmanAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAGGING_SUCCESS_TEXT = "Tagging Berhasil"
+        private const val RESIDENT_NAME_LABEL = "Nama Penghuni"
+        private const val RESIDENT_NAME_VALUE = "USER"
     }
 }
