@@ -190,6 +190,25 @@ class ScreenReader(
         return false
     }
 
+    /**
+     * Mengisi EditText tanpa meminta focus. ACTION_SET_TEXT melalui Accessibility
+     * tidak membutuhkan keyboard fisik/IME dan pada mayoritas perangkat tidak
+     * memunculkan soft keyboard. Ini dipakai untuk Nama Penghuni.
+     */
+    fun setTextWithoutKeyboard(node: AccessibilityNodeInfo, value: String): Boolean {
+        val arguments = Bundle().apply {
+            putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                value
+            )
+        }
+        node.performAction(AccessibilityNodeInfo.ACTION_CLEAR_FOCUS)
+        val result = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+        node.performAction(AccessibilityNodeInfo.ACTION_CLEAR_FOCUS)
+        return result
+    }
+
+    /** Fallback untuk field yang memang membutuhkan focus. */
     fun setText(node: AccessibilityNodeInfo, value: String): Boolean {
         val arguments = Bundle().apply {
             putCharSequence(
