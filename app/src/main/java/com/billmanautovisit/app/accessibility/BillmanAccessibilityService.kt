@@ -93,12 +93,14 @@ class BillmanAccessibilityService : AccessibilityService() {
             if (!ensureResidentNameIsUserAndKeyboardClosed()) return
             if (!ensureMigrationNoSelected()) return
 
-            AutomationRuntime.transitionTo(AutomationState.TAP_CAMERA_3)
+            // Aturan terbaru: bila migrasi prabayar = Tidak, tidak ada foto bukti migrasi.
+            // Langsung masuk tahap kirim/finalisasi dengan menunggu tombol Selesai aktif.
+            AutomationRuntime.transitionTo(AutomationState.WAIT_SELESAI)
             AutomationRuntime.setStatus(
-                "RUNNING: TAP_CAMERA_3 — migrasi prabayar Tidak terpilih"
+                "RUNNING: WAIT_SELESAI — migrasi prabayar Tidak terpilih"
             )
             AutomationRuntime.setLatestAction(
-                "Migrasi prabayar dipilih Tidak; lanjut kamera bukti"
+                "Migrasi prabayar dipilih Tidak; langsung menuju tombol Selesai"
             )
             finalFlowController.onBillmanEvent()
             return
@@ -149,8 +151,6 @@ class BillmanAccessibilityService : AccessibilityService() {
             residentNameFocusFallbackForId = null
             residentNameFallbackBackSentForId = null
 
-            // Jalur utama: isi langsung melalui Accessibility tanpa click/focus.
-            // Tujuannya agar soft keyboard tidak pernah dibuka.
             val directSet = screenReader.setTextWithoutKeyboard(field, RESIDENT_NAME_VALUE)
             if (directSet) {
                 screenReader.clearFocus(field)
@@ -164,9 +164,6 @@ class BillmanAccessibilityService : AccessibilityService() {
                 return false
             }
 
-            // Fallback hanya bila Billman menolak ACTION_SET_TEXT tanpa focus.
-            // setText() memberi focus dan dapat membuka IME, sehingga dicatat agar
-            // Back dapat dikirim tepat satu kali setelah USER terverifikasi.
             val fallbackSet = screenReader.setText(field, RESIDENT_NAME_VALUE)
             if (!fallbackSet) {
                 AutomationRuntime.setStatus(
@@ -190,8 +187,6 @@ class BillmanAccessibilityService : AccessibilityService() {
 
         screenReader.clearFocus(field)
 
-        // Bila jalur fallback focus dipakai, kirim Back tepat satu kali walaupun
-        // TYPE_INPUT_METHOD tidak terdeteksi. Kita tahu focus baru saja diminta.
         if (
             residentNameFocusFallbackForId == activeId &&
             residentNameFallbackBackSentForId != activeId
@@ -208,8 +203,6 @@ class BillmanAccessibilityService : AccessibilityService() {
             return false
         }
 
-        // Pengaman tambahan untuk perangkat yang tetap membuka IME meski
-        // ACTION_SET_TEXT dipanggil tanpa focus.
         if (screenReader.isInputMethodVisible()) {
             if (keyboardDismissId != activeId) {
                 keyboardDismissId = activeId
