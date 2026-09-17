@@ -10,8 +10,8 @@ android {
         applicationId = "com.billmanautovisit.app"
         minSdk = 26
         targetSdk = 32
-        versionCode = 19
-        versionName = "0.9.5-migration-no-only"
+        versionCode = 20
+        versionName = "0.9.6-no-keyboard-input"
     }
 
     buildTypes {
