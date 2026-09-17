@@ -65,32 +65,60 @@ class FinalFlowController(
 
     private suspend fun handleTapCamera3(): Boolean {
         val cameraNode = waitWithRetry(AutomationState.TAP_CAMERA_3) {
-            val node = findMigrationCameraNode()
-            if (node != null && node.isVisibleToUser &&
-                screenReader.isNodeOrClickableAncestorEnabled(node)
-            ) {
-                node
+            val button = screenReader.findNodeByResourceId(BTN_PRABAYAR_ID)
+
+            if (button != null) {
+                if (!button.isVisibleToUser) {
+                    screenReader.showNodeOnScreen(button)
+                    screenReader.scrollForwardFrom(button)
+                    null
+                } else if (button.isEnabled) {
+                    button
+                } else {
+                    null
+                }
             } else {
-                screenReader.scrollForwardOnce()
-                null
+                val fallbackIcon = screenReader.findNodeByResourceId(IV_PRABAYAR_ID)
+                if (
+                    fallbackIcon != null &&
+                    fallbackIcon.isVisibleToUser &&
+                    fallbackIcon.isEnabled &&
+                    screenReader.isNodeOrClickableAncestorEnabled(fallbackIcon)
+                ) {
+                    fallbackIcon
+                } else {
+                    val label = screenReader.findNodeByText(
+                        MIGRATION_PHOTO_LABEL,
+                        exactMatch = false
+                    )
+                    if (label != null) {
+                        screenReader.showNodeOnScreen(label)
+                        screenReader.scrollForwardFrom(label)
+                    } else {
+                        screenReader.scrollForwardOnce()
+                    }
+                    null
+                }
             }
         }
 
         if (!AutomationRuntime.isRunning) return false
         if (cameraNode == null) {
-            failCurrentState("Ikon kamera Foto Bukti Pernyataan Migrasi ke Prabayar tidak ditemukan")
+            failCurrentState(
+                "Tombol kamera migrasi btn_prabayar tidak ditemukan/terlihat setelah scroll"
+            )
             return false
         }
 
         if (!screenReader.clickNode(cameraNode)) {
-            failCurrentState("Gagal membuka kamera bukti migrasi prabayar")
+            failCurrentState("Tombol kamera migrasi ditemukan tetapi ACTION_CLICK gagal")
             return false
         }
 
         camera3RetryCount = 0
         updateStateAndLog(
             AutomationState.TAP_CAMERA_3,
-            "Kamera bukti migrasi prabayar dibuka"
+            "Tombol kamera biru btn_prabayar ditekan"
         )
         AutomationRuntime.transitionTo(AutomationState.CAMERA_SHUTTER_3)
         return true
@@ -142,7 +170,8 @@ class FinalFlowController(
                     null
                 }
                 !button.isVisibleToUser -> {
-                    screenReader.scrollForwardOnce()
+                    screenReader.showNodeOnScreen(button)
+                    screenReader.scrollForwardFrom(button)
                     null
                 }
                 button.isEnabled && screenReader.isNodeOrClickableAncestorEnabled(button) -> button
@@ -218,17 +247,8 @@ class FinalFlowController(
         AutomationRuntime.setCurrentWorkOrder(null, null)
         AutomationRuntime.transitionTo(AutomationState.WO_LIST)
 
-        // Root layar WO_LIST sudah terdeteksi sebelum transisi state, jadi jalankan
-        // engine awal sekali secara eksplisit agar loop berikutnya tidak bergantung
-        // pada munculnya AccessibilityEvent tambahan.
         resumeWoList()
         return false
-    }
-
-    private fun findMigrationCameraNode(): AccessibilityNodeInfo? {
-        return MIGRATION_CAMERA_IDS.firstNotNullOfOrNull { resourceId ->
-            screenReader.findNodeByResourceId(resourceId)
-        } ?: screenReader.findNodeByText(MIGRATION_PHOTO_LABEL, exactMatch = false)
     }
 
     private fun findSelesaiButton(): AccessibilityNodeInfo? {
@@ -331,10 +351,10 @@ class FinalFlowController(
         private const val MIGRATION_PHOTO_LABEL =
             "Foto Bukti Pernyataan Migrasi ke Prabayar"
 
-        private val MIGRATION_CAMERA_IDS = listOf(
-            "dev.iconpln.mims:id/iv_prabayar",
-            "dev.iconpln.mims:id/btn_prabayar"
-        )
+        // Dari binding/resource APK Billman: btn_prabayar adalah tombol kamera biru.
+        // iv_prabayar adalah image/preview dan hanya dipakai sebagai fallback bila clickable.
+        private const val BTN_PRABAYAR_ID = "dev.iconpln.mims:id/btn_prabayar"
+        private const val IV_PRABAYAR_ID = "dev.iconpln.mims:id/iv_prabayar"
 
         private val SELESAI_BUTTON_IDS = listOf(
             "dev.iconpln.mims:id/btn_selesai",
