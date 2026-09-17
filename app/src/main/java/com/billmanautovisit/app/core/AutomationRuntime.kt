@@ -61,6 +61,16 @@ object AutomationRuntime {
         statusMessage = message
     }
 
+    fun complete(message: String) {
+        currentState = AutomationState.WO_LIST
+        currentIdPelanggan = null
+        currentKodeWo = null
+        stopRequested = false
+        isRunning = false
+        TaggingGate.reset()
+        statusMessage = "COMPLETED: $message"
+    }
+
     fun requestStop() {
         stopRequested = true
         isRunning = false
