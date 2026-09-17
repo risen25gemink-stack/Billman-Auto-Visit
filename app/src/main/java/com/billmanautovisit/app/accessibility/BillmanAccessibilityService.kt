@@ -9,6 +9,7 @@ import com.billmanautovisit.app.core.AutomationState
 import com.billmanautovisit.app.core.TaggingGate
 import com.billmanautovisit.app.data.SqliteLocalDataStore
 import com.billmanautovisit.app.engine.AutomationEngine
+import com.billmanautovisit.app.engine.FinalFlowController
 import com.billmanautovisit.app.engine.VisitFlowController
 import com.billmanautovisit.app.screen.ScreenReader
 
@@ -19,6 +20,7 @@ class BillmanAccessibilityService : AccessibilityService() {
     private lateinit var localDataStore: SqliteLocalDataStore
     private lateinit var automationEngine: AutomationEngine
     private lateinit var visitFlowController: VisitFlowController
+    private lateinit var finalFlowController: FinalFlowController
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -27,6 +29,12 @@ class BillmanAccessibilityService : AccessibilityService() {
         localDataStore = SqliteLocalDataStore(applicationContext)
         automationEngine = AutomationEngine(screenReader, cameraTapper, localDataStore)
         visitFlowController = VisitFlowController(screenReader, cameraTapper, localDataStore)
+        finalFlowController = FinalFlowController(
+            screenReader = screenReader,
+            cameraTapper = cameraTapper,
+            dataStore = localDataStore,
+            resumeWoList = { automationEngine.onBillmanEvent() }
+        )
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -36,7 +44,11 @@ class BillmanAccessibilityService : AccessibilityService() {
 
         val packageName = safeEvent.packageName?.toString() ?: return
         if (packageName != AppConfig.TARGET_PACKAGE) return
-        if (!::automationEngine.isInitialized || !::visitFlowController.isInitialized) return
+        if (
+            !::automationEngine.isInitialized ||
+            !::visitFlowController.isInitialized ||
+            !::finalFlowController.isInitialized
+        ) return
         if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return
 
         val stateBeforeDispatch = AutomationRuntime.currentState
@@ -50,10 +62,18 @@ class BillmanAccessibilityService : AccessibilityService() {
             stateBeforeDispatch == AutomationState.CAMERA_SHUTTER_2 ||
             stateBeforeDispatch == AutomationState.CHECK_LUNAS ||
             stateBeforeDispatch == AutomationState.CHECK_WAJIB ||
-            stateBeforeDispatch == AutomationState.INPUT_MIGRASI ||
-            stateBeforeDispatch == AutomationState.TAP_CAMERA_3
+            stateBeforeDispatch == AutomationState.INPUT_MIGRASI
         ) {
             visitFlowController.onBillmanEvent()
+        }
+
+        if (
+            stateBeforeDispatch == AutomationState.TAP_CAMERA_3 ||
+            stateBeforeDispatch == AutomationState.CAMERA_SHUTTER_3 ||
+            stateBeforeDispatch == AutomationState.WAIT_SELESAI ||
+            stateBeforeDispatch == AutomationState.TAP_SELESAI
+        ) {
+            finalFlowController.onBillmanEvent()
         }
     }
 
@@ -86,6 +106,7 @@ class BillmanAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         if (::automationEngine.isInitialized) automationEngine.shutdown()
         if (::visitFlowController.isInitialized) visitFlowController.shutdown()
+        if (::finalFlowController.isInitialized) finalFlowController.shutdown()
         if (::localDataStore.isInitialized) localDataStore.close()
         super.onDestroy()
     }
