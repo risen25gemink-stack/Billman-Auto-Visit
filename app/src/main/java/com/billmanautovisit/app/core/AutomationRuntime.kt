@@ -49,6 +49,9 @@ object AutomationRuntime {
     var totalPages: Int? = null
         private set
 
+    @Volatile
+    var directFinishListener: (() -> Unit)? = null
+
     fun startSession(flow: AutomationFlow = AutomationFlow.LUNAS_MANDIRI) {
         selectedFlow = flow
         sessionStartedAt = System.currentTimeMillis()
@@ -79,8 +82,22 @@ object AutomationRuntime {
         if (state == AutomationState.TAP_TAGGING) {
             TaggingGate.reset()
         }
-        currentState = state
-        statusMessage = if (isPaused) "PAUSED: ${state.name}" else "RUNNING: ${state.name}"
+
+        val directFinish = selectedFlow.directFinishAfterSettlement &&
+            state == AutomationState.CHECK_WAJIB
+        val resolvedState = if (directFinish) AutomationState.WAIT_SELESAI else state
+
+        currentState = resolvedState
+        statusMessage = if (isPaused) {
+            "PAUSED: ${resolvedState.name}"
+        } else {
+            "RUNNING: ${resolvedState.name}"
+        }
+
+        if (directFinish) {
+            latestAction = "Rumah Kunci/Kosong terpilih; langsung menuju tombol Selesai"
+            directFinishListener?.invoke()
+        }
     }
 
     fun setCurrentWorkOrder(idPelanggan: String?, kodeWo: String?) {
