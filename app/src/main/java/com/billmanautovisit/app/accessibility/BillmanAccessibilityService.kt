@@ -61,6 +61,9 @@ class BillmanAccessibilityService : AccessibilityService() {
             dataStore = localDataStore,
             resumeWoList = { automationEngine.onBillmanEvent() }
         )
+        AutomationRuntime.directFinishListener = {
+            if (::finalFlowController.isInitialized) finalFlowController.onBillmanEvent()
+        }
         trackingOverlay = TrackingOverlayController(
             service = this,
             dataStore = localDataStore,
@@ -97,8 +100,6 @@ class BillmanAccessibilityService : AccessibilityService() {
             if (!ensureWhatsappNumberAndKeyboardClosed()) return
             if (!ensureMigrationNoSelected()) return
 
-            // Aturan terbaru: bila migrasi prabayar = Tidak, tidak ada foto bukti migrasi.
-            // Langsung masuk tahap kirim/finalisasi dengan menunggu tombol Selesai aktif.
             AutomationRuntime.transitionTo(AutomationState.WAIT_SELESAI)
             AutomationRuntime.setStatus(
                 "RUNNING: WAIT_SELESAI — data input lengkap dan migrasi prabayar Tidak terpilih"
@@ -141,9 +142,7 @@ class BillmanAccessibilityService : AccessibilityService() {
         val field = screenReader.findEditableFieldByLabel(RESIDENT_NAME_LABEL)
         if (field == null || !field.isVisibleToUser) {
             screenReader.scrollForwardOnce()
-            AutomationRuntime.setStatus(
-                "RUNNING: INPUT_MIGRASI — mencari field Nama Penghuni"
-            )
+            AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — mencari field Nama Penghuni")
             AutomationRuntime.setLatestAction("Mencari field Nama Penghuni")
             return false
         }
@@ -158,9 +157,7 @@ class BillmanAccessibilityService : AccessibilityService() {
             val directSet = screenReader.setTextWithoutKeyboard(field, RESIDENT_NAME_VALUE)
             if (directSet) {
                 screenReader.clearFocus(field)
-                AutomationRuntime.setStatus(
-                    "RUNNING: INPUT_MIGRASI — memverifikasi Nama Penghuni"
-                )
+                AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — memverifikasi Nama Penghuni")
                 AutomationRuntime.setLatestAction(
                     "Nama Penghuni diisi USER tanpa membuka keyboard; menunggu verifikasi"
                 )
@@ -170,18 +167,14 @@ class BillmanAccessibilityService : AccessibilityService() {
 
             val fallbackSet = screenReader.setText(field, RESIDENT_NAME_VALUE)
             if (!fallbackSet) {
-                AutomationRuntime.setStatus(
-                    "RUNNING: INPUT_MIGRASI — mencoba ulang Nama Penghuni"
-                )
+                AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — mencoba ulang Nama Penghuni")
                 AutomationRuntime.setLatestAction("Gagal mengisi Nama Penghuni; mencoba ulang")
                 scheduleInputRecheck()
                 return false
             }
 
             residentNameFocusFallbackForId = activeId
-            AutomationRuntime.setStatus(
-                "RUNNING: INPUT_MIGRASI — memverifikasi Nama Penghuni"
-            )
+            AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — memverifikasi Nama Penghuni")
             AutomationRuntime.setLatestAction(
                 "Nama Penghuni diisi USER lewat fallback focus; menyiapkan penutupan keyboard"
             )
@@ -217,16 +210,12 @@ class BillmanAccessibilityService : AccessibilityService() {
                 keyboardDismissAttempts += 1
                 screenReader.clearFocus(field)
                 screenReader.performBack()
-                AutomationRuntime.setStatus(
-                    "RUNNING: INPUT_MIGRASI — menutup keyboard"
-                )
+                AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — menutup keyboard")
                 AutomationRuntime.setLatestAction(
                     "Nama Penghuni = USER; menutup keyboard (${keyboardDismissAttempts}/$MAX_KEYBOARD_DISMISS_ATTEMPTS)"
                 )
             } else {
-                AutomationRuntime.setStatus(
-                    "RUNNING: INPUT_MIGRASI — menunggu keyboard tertutup"
-                )
+                AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — menunggu keyboard tertutup")
                 AutomationRuntime.setLatestAction("Menunggu keyboard Android tertutup")
             }
 
@@ -248,9 +237,7 @@ class BillmanAccessibilityService : AccessibilityService() {
         val field = screenReader.findEditableFieldByLabel(WHATSAPP_LABEL)
         if (field == null || !field.isVisibleToUser) {
             screenReader.scrollForwardOnce()
-            AutomationRuntime.setStatus(
-                "RUNNING: INPUT_MIGRASI — mencari field Input Nomor WA"
-            )
+            AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — mencari field Input Nomor WA")
             AutomationRuntime.setLatestAction("Mencari field Input Nomor WA")
             scheduleInputRecheck()
             return false
@@ -266,9 +253,7 @@ class BillmanAccessibilityService : AccessibilityService() {
             val directSet = screenReader.setTextWithoutKeyboard(field, WHATSAPP_VALUE)
             if (directSet) {
                 screenReader.clearFocus(field)
-                AutomationRuntime.setStatus(
-                    "RUNNING: INPUT_MIGRASI — memverifikasi Input Nomor WA"
-                )
+                AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — memverifikasi Input Nomor WA")
                 AutomationRuntime.setLatestAction(
                     "Input Nomor WA diisi $WHATSAPP_VALUE tanpa membuka keyboard; menunggu verifikasi"
                 )
@@ -278,18 +263,14 @@ class BillmanAccessibilityService : AccessibilityService() {
 
             val fallbackSet = screenReader.setText(field, WHATSAPP_VALUE)
             if (!fallbackSet) {
-                AutomationRuntime.setStatus(
-                    "RUNNING: INPUT_MIGRASI — mencoba ulang Input Nomor WA"
-                )
+                AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — mencoba ulang Input Nomor WA")
                 AutomationRuntime.setLatestAction("Gagal mengisi Input Nomor WA; mencoba ulang")
                 scheduleInputRecheck()
                 return false
             }
 
             whatsappFocusFallbackForId = activeId
-            AutomationRuntime.setStatus(
-                "RUNNING: INPUT_MIGRASI — memverifikasi Input Nomor WA"
-            )
+            AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — memverifikasi Input Nomor WA")
             AutomationRuntime.setLatestAction(
                 "Input Nomor WA diisi lewat fallback focus; menyiapkan penutupan keyboard"
             )
@@ -332,10 +313,10 @@ class BillmanAccessibilityService : AccessibilityService() {
                     "Input Nomor WA = $WHATSAPP_VALUE; menutup keyboard (${keyboardDismissAttempts}/$MAX_KEYBOARD_DISMISS_ATTEMPTS)"
                 )
             } else {
-                AutomationRuntime.setStatus(
-                    "RUNNING: INPUT_MIGRASI — menunggu keyboard tertutup"
+                AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — menunggu keyboard tertutup")
+                AutomationRuntime.setLatestAction(
+                    "Menunggu keyboard Android tertutup setelah Input Nomor WA"
                 )
-                AutomationRuntime.setLatestAction("Menunggu keyboard Android tertutup setelah Input Nomor WA")
             }
 
             scheduleInputRecheck()
@@ -360,9 +341,7 @@ class BillmanAccessibilityService : AccessibilityService() {
 
         if (radio == null || !radio.isVisibleToUser) {
             screenReader.scrollForwardOnce()
-            AutomationRuntime.setStatus(
-                "RUNNING: INPUT_MIGRASI — mencari opsi Tidak"
-            )
+            AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — mencari opsi Tidak")
             AutomationRuntime.setLatestAction("Mencari opsi migrasi prabayar: Tidak")
             scheduleInputRecheck()
             return false
@@ -375,17 +354,13 @@ class BillmanAccessibilityService : AccessibilityService() {
         }
 
         if (!screenReader.clickNode(radio)) {
-            AutomationRuntime.setStatus(
-                "RUNNING: INPUT_MIGRASI — mencoba ulang opsi Tidak"
-            )
+            AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — mencoba ulang opsi Tidak")
             AutomationRuntime.setLatestAction("Gagal menekan opsi Tidak; mencoba ulang")
             scheduleInputRecheck()
             return false
         }
 
-        AutomationRuntime.setStatus(
-            "RUNNING: INPUT_MIGRASI — memverifikasi opsi Tidak"
-        )
+        AutomationRuntime.setStatus("RUNNING: INPUT_MIGRASI — memverifikasi opsi Tidak")
         AutomationRuntime.setLatestAction("Opsi Tidak ditekan; menunggu verifikasi")
         scheduleInputRecheck()
         return false
@@ -411,9 +386,7 @@ class BillmanAccessibilityService : AccessibilityService() {
         if (
             AutomationRuntime.currentState != AutomationState.TAP_TAGGING &&
             AutomationRuntime.currentState != AutomationState.TAP_CAMERA_1
-        ) {
-            return
-        }
+        ) return
 
         val message = event.text
             .mapNotNull { it?.toString() }
@@ -435,6 +408,7 @@ class BillmanAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        AutomationRuntime.directFinishListener = null
         if (::trackingOverlay.isInitialized) trackingOverlay.destroy()
         if (::automationEngine.isInitialized) automationEngine.shutdown()
         if (::visitFlowController.isInitialized) visitFlowController.shutdown()
