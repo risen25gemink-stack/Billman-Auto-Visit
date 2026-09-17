@@ -303,33 +303,38 @@ class VisitFlowController(
     }
 
     private suspend fun handleCheckLunas(): Boolean {
+        val flow = AutomationRuntime.selectedFlow
+        val targetId = flow.settlementResourceId
+        val targetLabel = flow.settlementLabel
+
         val radio = waitForVisibleNode(
             state = AutomationState.CHECK_LUNAS,
-            resourceId = RADIO_LUNAS_MANDIRI_ID,
-            fallbackText = "Lunas Mandiri"
+            resourceId = targetId,
+            fallbackText = targetLabel
         )
 
         if (!AutomationRuntime.isRunning) return false
         if (radio == null) {
-            failCurrentState("Radio Lunas Mandiri tidak ditemukan setelah scroll")
+            failCurrentState("Radio $targetLabel tidak ditemukan setelah scroll")
             return false
         }
 
         if (!ensureChecked(
                 state = AutomationState.CHECK_LUNAS,
-                resourceId = RADIO_LUNAS_MANDIRI_ID,
+                resourceId = targetId,
                 initialNode = radio,
-                label = "Lunas Mandiri"
+                label = targetLabel
             )
         ) {
-            failCurrentState("Lunas Mandiri gagal dipilih")
+            failCurrentState("$targetLabel gagal dipilih")
             return false
         }
 
         updateStateAndLog(
             AutomationState.CHECK_LUNAS,
-            "Lunas Mandiri terpilih"
+            "$targetLabel terpilih (${flow.displayName})"
         )
+        AutomationRuntime.setLatestAction("Status Pelunasan: $targetLabel")
         AutomationRuntime.transitionTo(AutomationState.CHECK_WAJIB)
         return true
     }
@@ -527,8 +532,6 @@ class VisitFlowController(
         private const val BTN_VISIT_ID = "dev.iconpln.mims:id/btn_visit"
         private const val BTN_PHOTO_INVOICE_ID =
             "dev.iconpln.mims:id/btn_photo_penyerahan_invoice"
-        private const val RADIO_LUNAS_MANDIRI_ID =
-            "dev.iconpln.mims:id/radio_lunas_mandiri"
         private const val CB_INFORMASI_TAGIHAN_ID =
             "dev.iconpln.mims:id/cb_informasi_tagihan"
         private const val CB_TANGGAL_PELUNASAN_ID =
