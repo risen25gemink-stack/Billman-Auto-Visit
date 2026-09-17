@@ -29,6 +29,8 @@ class BillmanAccessibilityService : AccessibilityService() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var residentNamePreparedForId: String? = null
+    private var residentNameFocusFallbackForId: String? = null
+    private var residentNameFallbackBackSentForId: String? = null
     private var migrationNoPreparedForId: String? = null
     private var keyboardDismissId: String? = null
     private var keyboardDismissAttempts: Int = 0
@@ -144,25 +146,70 @@ class BillmanAccessibilityService : AccessibilityService() {
         if (currentValue != RESIDENT_NAME_VALUE) {
             keyboardDismissId = null
             keyboardDismissAttempts = 0
+            residentNameFocusFallbackForId = null
+            residentNameFallbackBackSentForId = null
 
-            screenReader.clickNode(field)
-            val textSet = screenReader.setText(field, RESIDENT_NAME_VALUE)
-            if (!textSet) {
+            // Jalur utama: isi langsung melalui Accessibility tanpa click/focus.
+            // Tujuannya agar soft keyboard tidak pernah dibuka.
+            val directSet = screenReader.setTextWithoutKeyboard(field, RESIDENT_NAME_VALUE)
+            if (directSet) {
+                screenReader.clearFocus(field)
+                AutomationRuntime.setStatus(
+                    "RUNNING: INPUT_MIGRASI — memverifikasi Nama Penghuni"
+                )
+                AutomationRuntime.setLatestAction(
+                    "Nama Penghuni diisi USER tanpa membuka keyboard; menunggu verifikasi"
+                )
+                scheduleInputRecheck()
+                return false
+            }
+
+            // Fallback hanya bila Billman menolak ACTION_SET_TEXT tanpa focus.
+            // setText() memberi focus dan dapat membuka IME, sehingga dicatat agar
+            // Back dapat dikirim tepat satu kali setelah USER terverifikasi.
+            val fallbackSet = screenReader.setText(field, RESIDENT_NAME_VALUE)
+            if (!fallbackSet) {
                 AutomationRuntime.setStatus(
                     "RUNNING: INPUT_MIGRASI — mencoba ulang Nama Penghuni"
                 )
                 AutomationRuntime.setLatestAction("Gagal mengisi Nama Penghuni; mencoba ulang")
+                scheduleInputRecheck()
                 return false
             }
 
+            residentNameFocusFallbackForId = activeId
             AutomationRuntime.setStatus(
                 "RUNNING: INPUT_MIGRASI — memverifikasi Nama Penghuni"
             )
-            AutomationRuntime.setLatestAction("Nama Penghuni diisi USER; menunggu verifikasi")
+            AutomationRuntime.setLatestAction(
+                "Nama Penghuni diisi USER lewat fallback focus; menyiapkan penutupan keyboard"
+            )
             scheduleInputRecheck()
             return false
         }
 
+        screenReader.clearFocus(field)
+
+        // Bila jalur fallback focus dipakai, kirim Back tepat satu kali walaupun
+        // TYPE_INPUT_METHOD tidak terdeteksi. Kita tahu focus baru saja diminta.
+        if (
+            residentNameFocusFallbackForId == activeId &&
+            residentNameFallbackBackSentForId != activeId
+        ) {
+            residentNameFallbackBackSentForId = activeId
+            screenReader.performBack()
+            AutomationRuntime.setStatus(
+                "RUNNING: INPUT_MIGRASI — menutup keyboard fallback"
+            )
+            AutomationRuntime.setLatestAction(
+                "Nama Penghuni = USER; Back dikirim untuk menutup keyboard fallback"
+            )
+            scheduleInputRecheck()
+            return false
+        }
+
+        // Pengaman tambahan untuk perangkat yang tetap membuka IME meski
+        // ACTION_SET_TEXT dipanggil tanpa focus.
         if (screenReader.isInputMethodVisible()) {
             if (keyboardDismissId != activeId) {
                 keyboardDismissId = activeId
@@ -190,11 +237,10 @@ class BillmanAccessibilityService : AccessibilityService() {
             return false
         }
 
-        screenReader.clearFocus(field)
         keyboardDismissId = null
         keyboardDismissAttempts = 0
         residentNamePreparedForId = activeId
-        AutomationRuntime.setLatestAction("Nama Penghuni = USER; keyboard tertutup")
+        AutomationRuntime.setLatestAction("Nama Penghuni = USER; keyboard tidak menghalangi")
         return true
     }
 
