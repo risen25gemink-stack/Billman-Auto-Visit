@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.billmanautovisit.app.core.AutomationRuntime
 
 class SqliteLocalDataStore(context: Context) :
     SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION),
@@ -164,6 +165,36 @@ class SqliteLocalDataStore(context: Context) :
             put("message", message)
         }
         writableDatabase.insertOrThrow("automation_logs", null, values)
+        AutomationRuntime.setLatestAction(message)
+    }
+
+    override fun getSessionStats(sessionStartedAt: Long): SessionStats {
+        var completed = 0
+        var skipped = 0
+        var inProgress = 0
+        readableDatabase.rawQuery(
+            """
+            SELECT status, COUNT(*)
+            FROM work_order_records
+            WHERE started_at >= ?
+            GROUP BY status
+            """.trimIndent(),
+            arrayOf(sessionStartedAt.toString())
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                when (cursor.getString(0)) {
+                    "COMPLETED" -> completed = cursor.getInt(1)
+                    "SKIPPED" -> skipped = cursor.getInt(1)
+                    "IN_PROGRESS" -> inProgress = cursor.getInt(1)
+                }
+            }
+        }
+        return SessionStats(
+            completed = completed,
+            skipped = skipped,
+            inProgress = inProgress,
+            totalSeen = completed + skipped + inProgress
+        )
     }
 
     companion object {
