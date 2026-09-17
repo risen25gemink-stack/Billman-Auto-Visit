@@ -65,11 +65,7 @@ object AutomationRuntime {
             TaggingGate.reset()
         }
         currentState = state
-        statusMessage = if (isPaused) {
-            "PAUSED: ${state.name}"
-        } else {
-            "RUNNING: ${state.name}"
-        }
+        statusMessage = if (isPaused) "PAUSED: ${state.name}" else "RUNNING: ${state.name}"
     }
 
     fun setCurrentWorkOrder(idPelanggan: String?, kodeWo: String?) {
@@ -97,13 +93,15 @@ object AutomationRuntime {
     fun pause() {
         if (!isRunning || stopRequested || isPaused) return
         isPaused = true
+        isRunning = false
         statusMessage = "PAUSED: ${currentState.name}"
         latestAction = "Otomasi dijeda"
     }
 
     fun resume() {
-        if (!isRunning || stopRequested || !isPaused) return
+        if (stopRequested || !isPaused) return
         isPaused = false
+        isRunning = true
         statusMessage = "RUNNING: ${currentState.name}"
         latestAction = "Otomasi dilanjutkan"
     }
