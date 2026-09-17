@@ -11,6 +11,7 @@ import com.billmanautovisit.app.data.SqliteLocalDataStore
 import com.billmanautovisit.app.engine.AutomationEngine
 import com.billmanautovisit.app.engine.FinalFlowController
 import com.billmanautovisit.app.engine.VisitFlowController
+import com.billmanautovisit.app.overlay.TrackingOverlayController
 import com.billmanautovisit.app.screen.ScreenReader
 
 class BillmanAccessibilityService : AccessibilityService() {
@@ -21,6 +22,7 @@ class BillmanAccessibilityService : AccessibilityService() {
     private lateinit var automationEngine: AutomationEngine
     private lateinit var visitFlowController: VisitFlowController
     private lateinit var finalFlowController: FinalFlowController
+    private lateinit var trackingOverlay: TrackingOverlayController
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -35,6 +37,13 @@ class BillmanAccessibilityService : AccessibilityService() {
             dataStore = localDataStore,
             resumeWoList = { automationEngine.onBillmanEvent() }
         )
+        trackingOverlay = TrackingOverlayController(
+            service = this,
+            dataStore = localDataStore,
+            screenReader = screenReader,
+            onResumeAutomation = { dispatchCurrentState() }
+        )
+        trackingOverlay.start()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -49,6 +58,12 @@ class BillmanAccessibilityService : AccessibilityService() {
             !::visitFlowController.isInitialized ||
             !::finalFlowController.isInitialized
         ) return
+        if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return
+
+        dispatchCurrentState()
+    }
+
+    private fun dispatchCurrentState() {
         if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return
 
         val stateBeforeDispatch = AutomationRuntime.currentState
@@ -96,6 +111,7 @@ class BillmanAccessibilityService : AccessibilityService() {
             AutomationRuntime.setStatus(
                 "RUNNING: TAP_CAMERA_1 — Tagging berhasil, kamera siap diproses"
             )
+            AutomationRuntime.setLatestAction("Tagging berhasil; kamera siap")
         }
     }
 
@@ -104,6 +120,7 @@ class BillmanAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        if (::trackingOverlay.isInitialized) trackingOverlay.destroy()
         if (::automationEngine.isInitialized) automationEngine.shutdown()
         if (::visitFlowController.isInitialized) visitFlowController.shutdown()
         if (::finalFlowController.isInitialized) finalFlowController.shutdown()
