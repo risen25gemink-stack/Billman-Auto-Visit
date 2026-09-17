@@ -111,13 +111,51 @@ class ScreenReader(
         return false
     }
 
+    /**
+     * Meminta Android membawa node yang sudah ada di Accessibility tree ke viewport.
+     * Ini lebih presisi daripada scroll global ketika target sudah diketahui.
+     */
+    fun showNodeOnScreen(node: AccessibilityNodeInfo): Boolean {
+        var current: AccessibilityNodeInfo? = node
+        repeat(6) {
+            val candidate = current ?: return false
+            if (candidate.performAction(AccessibilityNodeInfo.ACTION_SHOW_ON_SCREEN)) {
+                return true
+            }
+            current = candidate.parent
+        }
+        return false
+    }
+
+    /**
+     * Scroll container terdekat milik node target. Jika tidak ada ancestor scrollable,
+     * fallback ke scrollable pertama pada window aktif.
+     */
+    fun scrollForwardFrom(node: AccessibilityNodeInfo): Boolean {
+        var current: AccessibilityNodeInfo? = node.parent
+        repeat(10) {
+            val candidate = current ?: return@repeat
+            if (candidate.isScrollable &&
+                candidate.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            ) {
+                return true
+            }
+            current = candidate.parent
+        }
+        return scrollForwardOnce()
+    }
+
     fun scrollForwardOnce(): Boolean {
         val root = currentRoot() ?: return false
-        val scrollable = findFirst(root) { node ->
-            node.isVisibleToUser && node.isScrollable
-        } ?: return false
+        val scrollables = mutableListOf<AccessibilityNodeInfo>()
+        collectScrollableNodes(root, scrollables)
 
-        return scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+        for (node in scrollables) {
+            if (node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) {
+                return true
+            }
+        }
+        return false
     }
 
     fun setText(node: AccessibilityNodeInfo, value: String): Boolean {
@@ -166,6 +204,16 @@ class ScreenReader(
         }
         for (index in 0 until node.childCount) {
             node.getChild(index)?.let { collectVisibleTexts(it, output) }
+        }
+    }
+
+    private fun collectScrollableNodes(
+        node: AccessibilityNodeInfo,
+        output: MutableList<AccessibilityNodeInfo>
+    ) {
+        if (node.isScrollable) output += node
+        for (index in 0 until node.childCount) {
+            node.getChild(index)?.let { collectScrollableNodes(it, output) }
         }
     }
 
