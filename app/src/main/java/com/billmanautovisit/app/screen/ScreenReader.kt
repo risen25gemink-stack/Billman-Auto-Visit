@@ -3,6 +3,7 @@ package com.billmanautovisit.app.screen
 import android.accessibilityservice.AccessibilityService
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.billmanautovisit.app.core.TaggingGate
 
 
@@ -76,17 +77,9 @@ class ScreenReader(
             ?: findNodeByContentDescription("prev page")
             ?: findNodeByContentDescription("Previous")
 
-    /**
-     * Menemukan field editable yang berasosiasi dengan sebuah label form.
-     * Billman dapat merender label wajib sebagai "Nama Penghuni*", jadi label
-     * dinormalisasi sebelum dibandingkan. Setelah label ditemukan, pencarian
-     * diprioritaskan ke sibling/branch SETELAH label agar tidak salah mengambil
-     * field berikutnya seperti Input Nomor WA.
-     */
     fun findEditableFieldByLabel(label: String): AccessibilityNodeInfo? {
         val root = currentRoot() ?: return null
 
-        // Beberapa EditText mengekspos hint/contentDescription label secara langsung.
         val directlyLabeledField = findFirst(root) { node ->
             isEditable(node) && nodeMatchesLabel(node, label)
         }
@@ -95,13 +88,9 @@ class ScreenReader(
         val labelNode = findFirst(root) { node -> nodeMatchesLabel(node, label) } ?: return null
         if (isEditable(labelNode)) return labelNode
 
-        // Jika EditText memang anak langsung dari container label.
         findEditableDescendant(labelNode)?.let { return it }
-
-        // Cari field pada sibling setelah label, lalu naik beberapa level container.
         findEditableAfterNode(labelNode)?.let { return it }
 
-        // Fallback lama, tetapi dibatasi ke ancestor terdekat.
         var ancestor = labelNode.parent
         repeat(3) {
             val current = ancestor ?: return@repeat
@@ -211,6 +200,14 @@ class ScreenReader(
         node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
     }
+
+    fun clearFocus(node: AccessibilityNodeInfo): Boolean =
+        node.performAction(AccessibilityNodeInfo.ACTION_CLEAR_FOCUS)
+
+    fun isInputMethodVisible(): Boolean =
+        service.windows.any { window ->
+            window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD && window.root != null
+        }
 
     fun performBack(): Boolean =
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
