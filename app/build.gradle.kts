@@ -10,8 +10,8 @@ android {
         applicationId = "com.billmanautovisit.app"
         minSdk = 26
         targetSdk = 32
-        versionCode = 22
-        versionName = "0.10.0-flow-presets"
+        versionCode = 23
+        versionName = "0.10.1-whatsapp-input"
     }
 
     buildTypes {
