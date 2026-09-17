@@ -10,8 +10,8 @@ android {
         applicationId = "com.billmanautovisit.app"
         minSdk = 26
         targetSdk = 32
-        versionCode = 15
-        versionName = "0.9.1-resident-name"
+        versionCode = 16
+        versionName = "0.9.2-resident-name-fix"
     }
 
     buildTypes {
