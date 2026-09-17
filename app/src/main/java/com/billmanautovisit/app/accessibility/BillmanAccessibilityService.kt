@@ -1,6 +1,8 @@
 package com.billmanautovisit.app.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import com.billmanautovisit.app.camera.CameraTapper
 import com.billmanautovisit.app.core.AppConfig
@@ -24,7 +26,20 @@ class BillmanAccessibilityService : AccessibilityService() {
     private lateinit var finalFlowController: FinalFlowController
     private lateinit var trackingOverlay: TrackingOverlayController
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var residentNamePreparedForId: String? = null
+    private var keyboardDismissId: String? = null
+    private var keyboardDismissAttempts: Int = 0
+
+    private val keyboardRecheckRunnable = Runnable {
+        if (
+            AutomationRuntime.isRunning &&
+            !AutomationRuntime.stopRequested &&
+            AutomationRuntime.currentState == AutomationState.INPUT_MIGRASI
+        ) {
+            dispatchCurrentState()
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -72,7 +87,7 @@ class BillmanAccessibilityService : AccessibilityService() {
 
         if (
             stateBeforeDispatch == AutomationState.INPUT_MIGRASI &&
-            !ensureResidentNameIsUser()
+            !ensureResidentNameIsUserAndKeyboardClosed()
         ) {
             return
         }
@@ -102,7 +117,7 @@ class BillmanAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun ensureResidentNameIsUser(): Boolean {
+    private fun ensureResidentNameIsUserAndKeyboardClosed(): Boolean {
         val activeId = AutomationRuntime.currentIdPelanggan ?: return false
         if (residentNamePreparedForId == activeId) return true
 
@@ -117,35 +132,66 @@ class BillmanAccessibilityService : AccessibilityService() {
         }
 
         val currentValue = field.text?.toString()?.trim().orEmpty()
-        if (currentValue == RESIDENT_NAME_VALUE) {
-            residentNamePreparedForId = activeId
-            AutomationRuntime.setLatestAction("Nama Penghuni terverifikasi: USER")
-            return true
-        }
+        if (currentValue != RESIDENT_NAME_VALUE) {
+            keyboardDismissId = null
+            keyboardDismissAttempts = 0
 
-        screenReader.clickNode(field)
-        val textSet = screenReader.setText(field, RESIDENT_NAME_VALUE)
-        if (!textSet) {
-            AutomationRuntime.setStatus(
-                "RUNNING: INPUT_MIGRASI — mencoba ulang Nama Penghuni"
-            )
-            AutomationRuntime.setLatestAction("Gagal mengisi Nama Penghuni; mencoba ulang")
-            return false
-        }
+            screenReader.clickNode(field)
+            val textSet = screenReader.setText(field, RESIDENT_NAME_VALUE)
+            if (!textSet) {
+                AutomationRuntime.setStatus(
+                    "RUNNING: INPUT_MIGRASI — mencoba ulang Nama Penghuni"
+                )
+                AutomationRuntime.setLatestAction("Gagal mengisi Nama Penghuni; mencoba ulang")
+                return false
+            }
 
-        val refreshed = screenReader.findEditableFieldByLabel(RESIDENT_NAME_LABEL)
-        val verified = refreshed?.text?.toString()?.trim() == RESIDENT_NAME_VALUE
-        if (!verified) {
             AutomationRuntime.setStatus(
                 "RUNNING: INPUT_MIGRASI — memverifikasi Nama Penghuni"
             )
             AutomationRuntime.setLatestAction("Nama Penghuni diisi USER; menunggu verifikasi")
+            scheduleKeyboardRecheck()
             return false
         }
 
+        if (screenReader.isInputMethodVisible()) {
+            if (keyboardDismissId != activeId) {
+                keyboardDismissId = activeId
+                keyboardDismissAttempts = 0
+            }
+
+            if (keyboardDismissAttempts < MAX_KEYBOARD_DISMISS_ATTEMPTS) {
+                keyboardDismissAttempts += 1
+                screenReader.clearFocus(field)
+                screenReader.performBack()
+                AutomationRuntime.setStatus(
+                    "RUNNING: INPUT_MIGRASI — menutup keyboard"
+                )
+                AutomationRuntime.setLatestAction(
+                    "Nama Penghuni = USER; menutup keyboard (${keyboardDismissAttempts}/$MAX_KEYBOARD_DISMISS_ATTEMPTS)"
+                )
+            } else {
+                AutomationRuntime.setStatus(
+                    "RUNNING: INPUT_MIGRASI — menunggu keyboard tertutup"
+                )
+                AutomationRuntime.setLatestAction("Menunggu keyboard Android tertutup")
+            }
+
+            scheduleKeyboardRecheck()
+            return false
+        }
+
+        screenReader.clearFocus(field)
+        keyboardDismissId = null
+        keyboardDismissAttempts = 0
         residentNamePreparedForId = activeId
-        AutomationRuntime.setLatestAction("Nama Penghuni diisi otomatis: USER")
+        AutomationRuntime.setLatestAction("Nama Penghuni = USER; keyboard tertutup")
         return true
+    }
+
+    private fun scheduleKeyboardRecheck() {
+        mainHandler.removeCallbacks(keyboardRecheckRunnable)
+        mainHandler.postDelayed(keyboardRecheckRunnable, KEYBOARD_RECHECK_MS)
     }
 
     private fun captureTaggingResult(event: AccessibilityEvent) {
@@ -176,6 +222,7 @@ class BillmanAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         if (::trackingOverlay.isInitialized) trackingOverlay.destroy()
         if (::automationEngine.isInitialized) automationEngine.shutdown()
         if (::visitFlowController.isInitialized) visitFlowController.shutdown()
@@ -188,5 +235,7 @@ class BillmanAccessibilityService : AccessibilityService() {
         private const val TAGGING_SUCCESS_TEXT = "Tagging Berhasil"
         private const val RESIDENT_NAME_LABEL = "Nama Penghuni"
         private const val RESIDENT_NAME_VALUE = "USER"
+        private const val KEYBOARD_RECHECK_MS = 250L
+        private const val MAX_KEYBOARD_DISMISS_ATTEMPTS = 2
     }
 }
