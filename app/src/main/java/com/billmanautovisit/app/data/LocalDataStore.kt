@@ -21,6 +21,12 @@ interface LocalDataStore {
         finishedAt: Long
     )
 
+    fun markCompleted(
+        recordId: Long,
+        lastState: String,
+        finishedAt: Long
+    )
+
     fun addLog(
         workOrderRecordId: Long?,
         state: String,
