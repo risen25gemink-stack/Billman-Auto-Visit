@@ -65,6 +65,16 @@ object AutomationRuntime {
         statusMessage = "RUNNING: WO_LIST — ${flow.displayName}"
     }
 
+    fun changeSelectedFlow(flow: AutomationFlow): Boolean {
+        if (isRunning && !isPaused) return false
+        selectedFlow = flow
+        latestAction = "Alur dipilih: ${flow.displayName}"
+        if (isPaused) {
+            statusMessage = "PAUSED: ${currentState.name} — ${flow.displayName}"
+        }
+        return true
+    }
+
     fun transitionTo(state: AutomationState) {
         if (state == AutomationState.TAP_TAGGING) {
             TaggingGate.reset()
@@ -108,7 +118,7 @@ object AutomationRuntime {
         isPaused = false
         isRunning = true
         statusMessage = "RUNNING: ${currentState.name}"
-        latestAction = "Otomasi dilanjutkan"
+        latestAction = "Otomasi dilanjutkan — ${selectedFlow.displayName}"
     }
 
     fun complete(message: String) {
