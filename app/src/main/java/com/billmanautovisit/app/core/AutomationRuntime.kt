@@ -18,6 +18,10 @@ object AutomationRuntime {
         private set
 
     @Volatile
+    var isPaused: Boolean = false
+        private set
+
+    @Volatile
     var stopRequested: Boolean = false
         private set
 
@@ -29,13 +33,29 @@ object AutomationRuntime {
     var statusMessage: String = "IDLE"
         private set
 
+    @Volatile
+    var latestAction: String = "Belum ada tindakan"
+        private set
+
+    @Volatile
+    var currentPage: Int? = null
+        private set
+
+    @Volatile
+    var totalPages: Int? = null
+        private set
+
     fun startSession() {
         sessionStartedAt = System.currentTimeMillis()
         currentState = AutomationState.WO_LIST
         currentIdPelanggan = null
         currentKodeWo = null
         stopRequested = false
+        isPaused = false
         isRunning = true
+        currentPage = null
+        totalPages = null
+        latestAction = "Memulai sesi automasi"
         TaggingGate.reset()
         statusMessage = "RUNNING: WO_LIST"
     }
@@ -45,7 +65,11 @@ object AutomationRuntime {
             TaggingGate.reset()
         }
         currentState = state
-        statusMessage = "RUNNING: ${state.name}"
+        statusMessage = if (isPaused) {
+            "PAUSED: ${state.name}"
+        } else {
+            "RUNNING: ${state.name}"
+        }
     }
 
     fun setCurrentWorkOrder(idPelanggan: String?, kodeWo: String?) {
@@ -57,8 +81,31 @@ object AutomationRuntime {
         currentIdPelanggan = idPelanggan
     }
 
+    fun setPageInfo(current: Int?, total: Int?) {
+        currentPage = current
+        totalPages = total
+    }
+
+    fun setLatestAction(message: String) {
+        if (message.isNotBlank()) latestAction = message
+    }
+
     fun setStatus(message: String) {
         statusMessage = message
+    }
+
+    fun pause() {
+        if (!isRunning || stopRequested || isPaused) return
+        isPaused = true
+        statusMessage = "PAUSED: ${currentState.name}"
+        latestAction = "Otomasi dijeda"
+    }
+
+    fun resume() {
+        if (!isRunning || stopRequested || !isPaused) return
+        isPaused = false
+        statusMessage = "RUNNING: ${currentState.name}"
+        latestAction = "Otomasi dilanjutkan"
     }
 
     fun complete(message: String) {
@@ -66,22 +113,28 @@ object AutomationRuntime {
         currentIdPelanggan = null
         currentKodeWo = null
         stopRequested = false
+        isPaused = false
         isRunning = false
         TaggingGate.reset()
+        latestAction = message
         statusMessage = "COMPLETED: $message"
     }
 
     fun requestStop() {
         stopRequested = true
+        isPaused = false
         isRunning = false
         TaggingGate.reset()
+        latestAction = "Otomasi dihentikan"
         statusMessage = "IDLE"
     }
 
     fun fail(message: String) {
         stopRequested = true
+        isPaused = false
         isRunning = false
         TaggingGate.reset()
+        latestAction = message
         statusMessage = "ERROR: $message"
     }
 }
