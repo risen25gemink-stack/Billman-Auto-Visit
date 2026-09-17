@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import com.billmanautovisit.app.camera.CameraTapper
 import com.billmanautovisit.app.core.AppConfig
 import com.billmanautovisit.app.core.AutomationRuntime
@@ -28,10 +29,11 @@ class BillmanAccessibilityService : AccessibilityService() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var residentNamePreparedForId: String? = null
+    private var migrationNoPreparedForId: String? = null
     private var keyboardDismissId: String? = null
     private var keyboardDismissAttempts: Int = 0
 
-    private val keyboardRecheckRunnable = Runnable {
+    private val inputRecheckRunnable = Runnable {
         if (
             AutomationRuntime.isRunning &&
             !AutomationRuntime.stopRequested &&
@@ -85,10 +87,18 @@ class BillmanAccessibilityService : AccessibilityService() {
 
         val stateBeforeDispatch = AutomationRuntime.currentState
 
-        if (
-            stateBeforeDispatch == AutomationState.INPUT_MIGRASI &&
-            !ensureResidentNameIsUserAndKeyboardClosed()
-        ) {
+        if (stateBeforeDispatch == AutomationState.INPUT_MIGRASI) {
+            if (!ensureResidentNameIsUserAndKeyboardClosed()) return
+            if (!ensureMigrationNoSelected()) return
+
+            AutomationRuntime.transitionTo(AutomationState.TAP_CAMERA_3)
+            AutomationRuntime.setStatus(
+                "RUNNING: TAP_CAMERA_3 — migrasi prabayar Tidak terpilih"
+            )
+            AutomationRuntime.setLatestAction(
+                "Migrasi prabayar dipilih Tidak; lanjut kamera bukti"
+            )
+            finalFlowController.onBillmanEvent()
             return
         }
 
@@ -101,8 +111,7 @@ class BillmanAccessibilityService : AccessibilityService() {
             stateBeforeDispatch == AutomationState.TAP_CAMERA_2 ||
             stateBeforeDispatch == AutomationState.CAMERA_SHUTTER_2 ||
             stateBeforeDispatch == AutomationState.CHECK_LUNAS ||
-            stateBeforeDispatch == AutomationState.CHECK_WAJIB ||
-            stateBeforeDispatch == AutomationState.INPUT_MIGRASI
+            stateBeforeDispatch == AutomationState.CHECK_WAJIB
         ) {
             visitFlowController.onBillmanEvent()
         }
@@ -150,7 +159,7 @@ class BillmanAccessibilityService : AccessibilityService() {
                 "RUNNING: INPUT_MIGRASI — memverifikasi Nama Penghuni"
             )
             AutomationRuntime.setLatestAction("Nama Penghuni diisi USER; menunggu verifikasi")
-            scheduleKeyboardRecheck()
+            scheduleInputRecheck()
             return false
         }
 
@@ -177,7 +186,7 @@ class BillmanAccessibilityService : AccessibilityService() {
                 AutomationRuntime.setLatestAction("Menunggu keyboard Android tertutup")
             }
 
-            scheduleKeyboardRecheck()
+            scheduleInputRecheck()
             return false
         }
 
@@ -189,9 +198,59 @@ class BillmanAccessibilityService : AccessibilityService() {
         return true
     }
 
-    private fun scheduleKeyboardRecheck() {
-        mainHandler.removeCallbacks(keyboardRecheckRunnable)
-        mainHandler.postDelayed(keyboardRecheckRunnable, KEYBOARD_RECHECK_MS)
+    private fun ensureMigrationNoSelected(): Boolean {
+        val activeId = AutomationRuntime.currentIdPelanggan ?: return false
+        if (migrationNoPreparedForId == activeId) return true
+
+        val byId = screenReader.findNodeByResourceId(RB_PRABAYAR_TIDAK_ID)
+        val radio = byId ?: screenReader.findNodeByText("Tidak", exactMatch = true)
+
+        if (radio == null || !radio.isVisibleToUser) {
+            screenReader.scrollForwardOnce()
+            AutomationRuntime.setStatus(
+                "RUNNING: INPUT_MIGRASI — mencari opsi Tidak"
+            )
+            AutomationRuntime.setLatestAction("Mencari opsi migrasi prabayar: Tidak")
+            scheduleInputRecheck()
+            return false
+        }
+
+        if (isNodeOrAncestorChecked(radio)) {
+            migrationNoPreparedForId = activeId
+            AutomationRuntime.setLatestAction("Migrasi prabayar terverifikasi: Tidak")
+            return true
+        }
+
+        if (!screenReader.clickNode(radio)) {
+            AutomationRuntime.setStatus(
+                "RUNNING: INPUT_MIGRASI — mencoba ulang opsi Tidak"
+            )
+            AutomationRuntime.setLatestAction("Gagal menekan opsi Tidak; mencoba ulang")
+            scheduleInputRecheck()
+            return false
+        }
+
+        AutomationRuntime.setStatus(
+            "RUNNING: INPUT_MIGRASI — memverifikasi opsi Tidak"
+        )
+        AutomationRuntime.setLatestAction("Opsi Tidak ditekan; menunggu verifikasi")
+        scheduleInputRecheck()
+        return false
+    }
+
+    private fun isNodeOrAncestorChecked(node: AccessibilityNodeInfo): Boolean {
+        var current: AccessibilityNodeInfo? = node
+        repeat(6) {
+            val candidate = current ?: return false
+            if (candidate.isChecked) return true
+            current = candidate.parent
+        }
+        return false
+    }
+
+    private fun scheduleInputRecheck() {
+        mainHandler.removeCallbacks(inputRecheckRunnable)
+        mainHandler.postDelayed(inputRecheckRunnable, INPUT_RECHECK_MS)
     }
 
     private fun captureTaggingResult(event: AccessibilityEvent) {
@@ -235,7 +294,8 @@ class BillmanAccessibilityService : AccessibilityService() {
         private const val TAGGING_SUCCESS_TEXT = "Tagging Berhasil"
         private const val RESIDENT_NAME_LABEL = "Nama Penghuni"
         private const val RESIDENT_NAME_VALUE = "USER"
-        private const val KEYBOARD_RECHECK_MS = 250L
+        private const val RB_PRABAYAR_TIDAK_ID = "dev.iconpln.mims:id/rb_prabayar_tidak"
+        private const val INPUT_RECHECK_MS = 250L
         private const val MAX_KEYBOARD_DISMISS_ATTEMPTS = 2
     }
 }
