@@ -31,6 +31,9 @@ class BillmanAccessibilityService : AccessibilityService() {
     private var residentNamePreparedForId: String? = null
     private var residentNameFocusFallbackForId: String? = null
     private var residentNameFallbackBackSentForId: String? = null
+    private var whatsappPreparedForId: String? = null
+    private var whatsappFocusFallbackForId: String? = null
+    private var whatsappFallbackBackSentForId: String? = null
     private var migrationNoPreparedForId: String? = null
     private var keyboardDismissId: String? = null
     private var keyboardDismissAttempts: Int = 0
@@ -91,16 +94,17 @@ class BillmanAccessibilityService : AccessibilityService() {
 
         if (stateBeforeDispatch == AutomationState.INPUT_MIGRASI) {
             if (!ensureResidentNameIsUserAndKeyboardClosed()) return
+            if (!ensureWhatsappNumberAndKeyboardClosed()) return
             if (!ensureMigrationNoSelected()) return
 
             // Aturan terbaru: bila migrasi prabayar = Tidak, tidak ada foto bukti migrasi.
             // Langsung masuk tahap kirim/finalisasi dengan menunggu tombol Selesai aktif.
             AutomationRuntime.transitionTo(AutomationState.WAIT_SELESAI)
             AutomationRuntime.setStatus(
-                "RUNNING: WAIT_SELESAI — migrasi prabayar Tidak terpilih"
+                "RUNNING: WAIT_SELESAI — data input lengkap dan migrasi prabayar Tidak terpilih"
             )
             AutomationRuntime.setLatestAction(
-                "Migrasi prabayar dipilih Tidak; langsung menuju tombol Selesai"
+                "Nama Penghuni dan Nomor WA terisi; migrasi Tidak; menuju tombol Selesai"
             )
             finalFlowController.onBillmanEvent()
             return
@@ -194,7 +198,7 @@ class BillmanAccessibilityService : AccessibilityService() {
             residentNameFallbackBackSentForId = activeId
             screenReader.performBack()
             AutomationRuntime.setStatus(
-                "RUNNING: INPUT_MIGRASI — menutup keyboard fallback"
+                "RUNNING: INPUT_MIGRASI — menutup keyboard setelah Nama Penghuni"
             )
             AutomationRuntime.setLatestAction(
                 "Nama Penghuni = USER; Back dikirim untuk menutup keyboard fallback"
@@ -233,7 +237,117 @@ class BillmanAccessibilityService : AccessibilityService() {
         keyboardDismissId = null
         keyboardDismissAttempts = 0
         residentNamePreparedForId = activeId
-        AutomationRuntime.setLatestAction("Nama Penghuni = USER; keyboard tidak menghalangi")
+        AutomationRuntime.setLatestAction("Nama Penghuni = USER; lanjut Input Nomor WA")
+        return true
+    }
+
+    private fun ensureWhatsappNumberAndKeyboardClosed(): Boolean {
+        val activeId = AutomationRuntime.currentIdPelanggan ?: return false
+        if (whatsappPreparedForId == activeId) return true
+
+        val field = screenReader.findEditableFieldByLabel(WHATSAPP_LABEL)
+        if (field == null || !field.isVisibleToUser) {
+            screenReader.scrollForwardOnce()
+            AutomationRuntime.setStatus(
+                "RUNNING: INPUT_MIGRASI — mencari field Input Nomor WA"
+            )
+            AutomationRuntime.setLatestAction("Mencari field Input Nomor WA")
+            scheduleInputRecheck()
+            return false
+        }
+
+        val currentValue = field.text?.toString()?.trim().orEmpty()
+        if (currentValue != WHATSAPP_VALUE) {
+            keyboardDismissId = null
+            keyboardDismissAttempts = 0
+            whatsappFocusFallbackForId = null
+            whatsappFallbackBackSentForId = null
+
+            val directSet = screenReader.setTextWithoutKeyboard(field, WHATSAPP_VALUE)
+            if (directSet) {
+                screenReader.clearFocus(field)
+                AutomationRuntime.setStatus(
+                    "RUNNING: INPUT_MIGRASI — memverifikasi Input Nomor WA"
+                )
+                AutomationRuntime.setLatestAction(
+                    "Input Nomor WA diisi $WHATSAPP_VALUE tanpa membuka keyboard; menunggu verifikasi"
+                )
+                scheduleInputRecheck()
+                return false
+            }
+
+            val fallbackSet = screenReader.setText(field, WHATSAPP_VALUE)
+            if (!fallbackSet) {
+                AutomationRuntime.setStatus(
+                    "RUNNING: INPUT_MIGRASI — mencoba ulang Input Nomor WA"
+                )
+                AutomationRuntime.setLatestAction("Gagal mengisi Input Nomor WA; mencoba ulang")
+                scheduleInputRecheck()
+                return false
+            }
+
+            whatsappFocusFallbackForId = activeId
+            AutomationRuntime.setStatus(
+                "RUNNING: INPUT_MIGRASI — memverifikasi Input Nomor WA"
+            )
+            AutomationRuntime.setLatestAction(
+                "Input Nomor WA diisi lewat fallback focus; menyiapkan penutupan keyboard"
+            )
+            scheduleInputRecheck()
+            return false
+        }
+
+        screenReader.clearFocus(field)
+
+        if (
+            whatsappFocusFallbackForId == activeId &&
+            whatsappFallbackBackSentForId != activeId
+        ) {
+            whatsappFallbackBackSentForId = activeId
+            screenReader.performBack()
+            AutomationRuntime.setStatus(
+                "RUNNING: INPUT_MIGRASI — menutup keyboard setelah Input Nomor WA"
+            )
+            AutomationRuntime.setLatestAction(
+                "Input Nomor WA = $WHATSAPP_VALUE; Back dikirim untuk menutup keyboard fallback"
+            )
+            scheduleInputRecheck()
+            return false
+        }
+
+        if (screenReader.isInputMethodVisible()) {
+            if (keyboardDismissId != activeId) {
+                keyboardDismissId = activeId
+                keyboardDismissAttempts = 0
+            }
+
+            if (keyboardDismissAttempts < MAX_KEYBOARD_DISMISS_ATTEMPTS) {
+                keyboardDismissAttempts += 1
+                screenReader.clearFocus(field)
+                screenReader.performBack()
+                AutomationRuntime.setStatus(
+                    "RUNNING: INPUT_MIGRASI — menutup keyboard setelah Input Nomor WA"
+                )
+                AutomationRuntime.setLatestAction(
+                    "Input Nomor WA = $WHATSAPP_VALUE; menutup keyboard (${keyboardDismissAttempts}/$MAX_KEYBOARD_DISMISS_ATTEMPTS)"
+                )
+            } else {
+                AutomationRuntime.setStatus(
+                    "RUNNING: INPUT_MIGRASI — menunggu keyboard tertutup"
+                )
+                AutomationRuntime.setLatestAction("Menunggu keyboard Android tertutup setelah Input Nomor WA")
+            }
+
+            scheduleInputRecheck()
+            return false
+        }
+
+        keyboardDismissId = null
+        keyboardDismissAttempts = 0
+        whatsappPreparedForId = activeId
+        AutomationRuntime.setLatestAction(
+            "Input Nomor WA = $WHATSAPP_VALUE terverifikasi; lanjut opsi migrasi Tidak"
+        )
         return true
     }
 
@@ -333,6 +447,8 @@ class BillmanAccessibilityService : AccessibilityService() {
         private const val TAGGING_SUCCESS_TEXT = "Tagging Berhasil"
         private const val RESIDENT_NAME_LABEL = "Nama Penghuni"
         private const val RESIDENT_NAME_VALUE = "USER"
+        private const val WHATSAPP_LABEL = "Input Nomor WA"
+        private const val WHATSAPP_VALUE = "0000000000000"
         private const val RB_PRABAYAR_TIDAK_ID = "dev.iconpln.mims:id/rb_prabayar_tidak"
         private const val INPUT_RECHECK_MS = 250L
         private const val MAX_KEYBOARD_DISMISS_ATTEMPTS = 2
