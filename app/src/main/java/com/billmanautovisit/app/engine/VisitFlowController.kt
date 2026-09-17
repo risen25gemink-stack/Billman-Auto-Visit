@@ -15,6 +15,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Menangani alur Visit sampai CHECK_WAJIB.
+ *
+ * Penting: INPUT_MIGRASI sengaja TIDAK ditangani di controller ini.
+ * Setelah CHECK_WAJIB selesai, state berpindah ke INPUT_MIGRASI lalu controller
+ * berhenti. INPUT_MIGRASI ditangani eksklusif oleh BillmanAccessibilityService
+ * agar hanya opsi "Tidak" yang dapat dipilih.
+ */
 class VisitFlowController(
     private val screenReader: ScreenReader,
     private val cameraTapper: CameraTapper,
@@ -60,13 +68,7 @@ class VisitFlowController(
                 AutomationState.CAMERA_SHUTTER_2 -> handleCameraShutter2()
                 AutomationState.CHECK_LUNAS -> handleCheckLunas()
                 AutomationState.CHECK_WAJIB -> handleCheckWajib()
-                AutomationState.INPUT_MIGRASI -> handleInputMigrasi()
-                AutomationState.TAP_CAMERA_3 -> {
-                    AutomationRuntime.setStatus(
-                        "RUNNING: TAP_CAMERA_3 — uji berhenti setelah migrasi Ya dipilih"
-                    )
-                    false
-                }
+                // INPUT_MIGRASI bukan tanggung jawab controller ini.
                 else -> false
             }
 
@@ -161,6 +163,7 @@ class VisitFlowController(
             return false
         }
 
+        // "Ya" di sini HANYA untuk popup konfirmasi Visit rumah, bukan opsi migrasi.
         val yesButton = waitWithRetry(AutomationState.TAP_VISIT) {
             if (!isVisitConfirmationVisible()) {
                 null
@@ -373,41 +376,11 @@ class VisitFlowController(
         currentRecordId?.let {
             dataStore.updateLastState(it, AutomationState.CHECK_WAJIB.name)
         }
+
+        // Handoff eksplisit. Controller berhenti setelah state ini.
         AutomationRuntime.transitionTo(AutomationState.INPUT_MIGRASI)
-        return true
-    }
-
-    private suspend fun handleInputMigrasi(): Boolean {
-        val yesRadio = waitForVisibleNode(
-            state = AutomationState.INPUT_MIGRASI,
-            resourceId = RB_PRABAYAR_YA_ID,
-            fallbackText = "Ya"
-        )
-
-        if (!AutomationRuntime.isRunning) return false
-        if (yesRadio == null) {
-            failCurrentState("Radio Ya untuk migrasi prabayar tidak ditemukan setelah scroll")
-            return false
-        }
-
-        if (!ensureChecked(
-                state = AutomationState.INPUT_MIGRASI,
-                resourceId = RB_PRABAYAR_YA_ID,
-                initialNode = yesRadio,
-                label = "Migrasi prabayar: Ya"
-            )
-        ) {
-            failCurrentState("Radio Ya migrasi prabayar gagal dipilih")
-            return false
-        }
-
-        updateStateAndLog(
-            AutomationState.INPUT_MIGRASI,
-            "Migrasi prabayar dipilih Ya; Nama Penghuni dan Input Nomor WA tidak disentuh"
-        )
-        AutomationRuntime.transitionTo(AutomationState.TAP_CAMERA_3)
         AutomationRuntime.setStatus(
-            "RUNNING: TAP_CAMERA_3 — uji berhenti setelah migrasi Ya dipilih"
+            "RUNNING: INPUT_MIGRASI — menunggu Nama Penghuni/keyboard lalu memilih Tidak"
         )
         return false
     }
@@ -539,9 +512,7 @@ class VisitFlowController(
             state == AutomationState.TAP_CAMERA_2 ||
             state == AutomationState.CAMERA_SHUTTER_2 ||
             state == AutomationState.CHECK_LUNAS ||
-            state == AutomationState.CHECK_WAJIB ||
-            state == AutomationState.INPUT_MIGRASI ||
-            state == AutomationState.TAP_CAMERA_3
+            state == AutomationState.CHECK_WAJIB
 
     companion object {
         private const val POLL_INTERVAL_MS = 300L
@@ -564,8 +535,6 @@ class VisitFlowController(
             "dev.iconpln.mims:id/cb_tanggal_pelunasan"
         private const val CB_INFORMASI_KONSEKUENSI_ID =
             "dev.iconpln.mims:id/cb_informasi_konsekuensi"
-        private const val RB_PRABAYAR_YA_ID =
-            "dev.iconpln.mims:id/rb_prabayar_ya"
         private const val VISIT_CONFIRMATION_TEXT =
             "Anda yakin ingin mengunjungi rumah ini"
     }
