@@ -130,6 +130,25 @@ class SqliteLocalDataStore(context: Context) :
         )
     }
 
+    override fun markCompleted(
+        recordId: Long,
+        lastState: String,
+        finishedAt: Long
+    ) {
+        val values = ContentValues().apply {
+            put("status", "COMPLETED")
+            put("last_state", lastState)
+            putNull("error_message")
+            put("finished_at", finishedAt)
+        }
+        writableDatabase.update(
+            "work_order_records",
+            values,
+            "id = ?",
+            arrayOf(recordId.toString())
+        )
+    }
+
     override fun addLog(
         workOrderRecordId: Long?,
         state: String,
