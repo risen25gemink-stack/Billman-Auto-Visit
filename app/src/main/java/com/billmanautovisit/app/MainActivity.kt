@@ -3,6 +3,7 @@ package com.billmanautovisit.app
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -10,13 +11,17 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import com.billmanautovisit.app.accessibility.BillmanAccessibilityService
+import com.billmanautovisit.app.core.AutomationFlow
 import com.billmanautovisit.app.core.AutomationRuntime
 import com.billmanautovisit.app.data.SqliteLocalDataStore
 import com.billmanautovisit.app.service.AutomationForegroundService
@@ -26,9 +31,13 @@ class MainActivity : Activity() {
     private lateinit var accessibilityBadge: TextView
     private lateinit var statusTitle: TextView
     private lateinit var statusDetail: TextView
+    private lateinit var flowGroup: RadioGroup
+    private lateinit var flowMandiriRadio: RadioButton
+    private lateinit var flowOfflineRadio: RadioButton
     private lateinit var completedValue: TextView
     private lateinit var skippedValue: TextView
     private lateinit var processedValue: TextView
+    private lateinit var flowValue: TextView
     private lateinit var pageValue: TextView
     private lateinit var activeIdValue: TextView
     private lateinit var latestActionValue: TextView
@@ -40,6 +49,7 @@ class MainActivity : Activity() {
         window.statusBarColor = CANVAS
         window.navigationBarColor = CANVAS
         setContentView(buildContentView())
+        restoreFlowSelection()
         bindActions()
     }
 
@@ -72,7 +82,7 @@ class MainActivity : Activity() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "Kontrol automasi, pantau progres, lalu biarkan panel kecil mengikuti proses di Billman."
+            text = "Pilih alur kerja, jalankan automasi, lalu pantau proses langsung dari panel tracking."
             textSize = 14f
             setTextColor(BODY)
             setLineSpacing(0f, 1.25f)
@@ -100,13 +110,32 @@ class MainActivity : Activity() {
             setTypeface(Typeface.DEFAULT, Typeface.BOLD)
         }
         statusDetail = TextView(this).apply {
-            text = "Tekan Mulai untuk menjalankan automasi."
+            text = "Pilih alur lalu tekan Mulai."
             textSize = 13f
             setTextColor(MUTED)
             setPadding(0, dp(4), 0, 0)
         }
         statusCard.addView(statusTitle)
         statusCard.addView(statusDetail)
+
+        val flowLabel = sectionLabel("Alur pekerjaan")
+        val flowCard = card(dp(12), SURFACE_SOFT).apply {
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+        flowGroup = RadioGroup(this).apply {
+            orientation = RadioGroup.VERTICAL
+        }
+        flowMandiriRadio = flowRadioOption(
+            title = "Alur 1 — Lunas Mandiri",
+            description = "Status Pelunasan memilih Lunas Mandiri."
+        )
+        flowOfflineRadio = flowRadioOption(
+            title = "Alur 2 — Lunas Offline",
+            description = "Status Pelunasan memilih Lunas Offline; langkah lain tetap sama."
+        )
+        flowGroup.addView(flowMandiriRadio)
+        flowGroup.addView(flowOfflineRadio)
+        flowCard.addView(flowGroup)
 
         val progressLabel = sectionLabel("Progres sesi")
         val progressRow = LinearLayout(this).apply {
@@ -119,6 +148,7 @@ class MainActivity : Activity() {
         val detailCard = card(dp(12), SURFACE_SOFT).apply {
             setPadding(dp(16), dp(14), dp(16), dp(14))
         }
+        flowValue = detailLine(detailCard, "Alur aktif", "—")
         pageValue = detailLine(detailCard, "Halaman", "—")
         activeIdValue = detailLine(detailCard, "ID aktif", "—")
         latestActionValue = detailLine(detailCard, "Tindakan terakhir", "Belum ada tindakan")
@@ -173,6 +203,8 @@ class MainActivity : Activity() {
         container.addView(subtitle)
         container.addView(topBadgeRow)
         container.addView(statusCard)
+        container.addView(flowLabel)
+        container.addView(flowCard)
         container.addView(progressLabel)
         container.addView(progressRow)
         container.addView(detailCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -193,6 +225,18 @@ class MainActivity : Activity() {
     }
 
     private fun bindActions() {
+        flowGroup.setOnCheckedChangeListener { _, _ ->
+            val sessionActive = AutomationRuntime.isRunning || AutomationRuntime.isPaused
+            if (!sessionActive) {
+                val flow = selectedFlowFromUi()
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_FLOW, flow.wireValue)
+                    .apply()
+                flowValue.text = flow.displayName
+            }
+        }
+
         startButton.setOnClickListener {
             if (!isAccessibilityServiceEnabled()) {
                 statusTitle.text = "Accessibility belum aktif"
@@ -201,8 +245,15 @@ class MainActivity : Activity() {
                 return@setOnClickListener
             }
 
+            val flow = selectedFlowFromUi()
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(KEY_FLOW, flow.wireValue)
+                .apply()
+
             val intent = Intent(this, AutomationForegroundService::class.java).apply {
                 action = AutomationForegroundService.ACTION_START
+                putExtra(AutomationForegroundService.EXTRA_FLOW, flow.wireValue)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(intent)
@@ -212,6 +263,8 @@ class MainActivity : Activity() {
 
             startButton.isEnabled = false
             stopButton.isEnabled = true
+            flowMandiriRadio.isEnabled = false
+            flowOfflineRadio.isEnabled = false
             moveTaskToBack(true)
         }
 
@@ -223,6 +276,22 @@ class MainActivity : Activity() {
             refreshUiState()
         }
     }
+
+    private fun restoreFlowSelection() {
+        val saved = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString(KEY_FLOW, null)
+        val flow = AutomationFlow.fromWireValue(saved)
+        flowGroup.check(
+            if (flow == AutomationFlow.LUNAS_OFFLINE) flowOfflineRadio.id else flowMandiriRadio.id
+        )
+    }
+
+    private fun selectedFlowFromUi(): AutomationFlow =
+        if (flowGroup.checkedRadioButtonId == flowOfflineRadio.id) {
+            AutomationFlow.LUNAS_OFFLINE
+        } else {
+            AutomationFlow.LUNAS_MANDIRI
+        }
 
     private fun refreshUiState() {
         val enabled = isAccessibilityServiceEnabled()
@@ -258,15 +327,19 @@ class MainActivity : Activity() {
         skippedValue.text = (stats?.skipped ?: 0).toString()
         processedValue.text = (stats?.totalSeen ?: 0).toString()
 
+        val sessionActive = AutomationRuntime.isRunning || AutomationRuntime.isPaused
+        val displayFlow = if (sessionActive) AutomationRuntime.selectedFlow else selectedFlowFromUi()
+        flowValue.text = displayFlow.displayName
         pageValue.text = if (AutomationRuntime.currentPage != null && AutomationRuntime.totalPages != null) {
             "${AutomationRuntime.currentPage} dari ${AutomationRuntime.totalPages}"
         } else "—"
         activeIdValue.text = AutomationRuntime.currentIdPelanggan ?: "—"
         latestActionValue.text = AutomationRuntime.latestAction
 
-        val sessionActive = AutomationRuntime.isRunning || AutomationRuntime.isPaused
         startButton.isEnabled = enabled && !sessionActive
         stopButton.isEnabled = sessionActive
+        flowMandiriRadio.isEnabled = !sessionActive
+        flowOfflineRadio.isEnabled = !sessionActive
     }
 
     private fun card(radius: Int, color: Int): LinearLayout = LinearLayout(this).apply {
@@ -281,6 +354,18 @@ class MainActivity : Activity() {
         setTypeface(Typeface.DEFAULT, Typeface.BOLD)
         setPadding(0, dp(22), 0, dp(10))
     }
+
+    private fun flowRadioOption(title: String, description: String): RadioButton =
+        RadioButton(this).apply {
+            id = View.generateViewId()
+            text = "$title\n$description"
+            textSize = 13f
+            setTextColor(INK)
+            buttonTintList = ColorStateList.valueOf(PRIMARY)
+            gravity = Gravity.CENTER_VERTICAL
+            setLineSpacing(0f, 1.15f)
+            setPadding(0, dp(8), 0, dp(8))
+        }
 
     private fun metricCard(parent: LinearLayout, label: String, accent: Int): TextView {
         val box = LinearLayout(this).apply {
@@ -366,6 +451,9 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        private const val PREFS_NAME = "billman_auto_visit_prefs"
+        private const val KEY_FLOW = "selected_flow"
+
         private val PRIMARY = Color.rgb(204, 120, 92)
         private val CANVAS = Color.rgb(250, 249, 245)
         private val SURFACE_SOFT = Color.rgb(245, 240, 232)
