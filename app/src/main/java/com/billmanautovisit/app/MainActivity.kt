@@ -34,6 +34,7 @@ class MainActivity : Activity() {
     private lateinit var flowGroup: RadioGroup
     private lateinit var flowMandiriRadio: RadioButton
     private lateinit var flowOfflineRadio: RadioButton
+    private lateinit var flowRumahKosongRadio: RadioButton
     private lateinit var completedValue: TextView
     private lateinit var skippedValue: TextView
     private lateinit var processedValue: TextView
@@ -126,21 +127,24 @@ class MainActivity : Activity() {
             orientation = RadioGroup.VERTICAL
         }
         flowMandiriRadio = flowRadioOption(
-            title = "Alur 1 — Lunas Mandiri",
-            description = "Status Pelunasan memilih Lunas Mandiri."
+            "Alur 1 — Lunas Mandiri",
+            "Status Pelunasan memilih Lunas Mandiri."
         )
         flowOfflineRadio = flowRadioOption(
-            title = "Alur 2 — Lunas Offline",
-            description = "Status Pelunasan memilih Lunas Offline; langkah lain tetap sama."
+            "Alur 2 — Lunas Offline",
+            "Status Pelunasan memilih Lunas Offline; langkah berikutnya sama dengan Alur 1."
+        )
+        flowRumahKosongRadio = flowRadioOption(
+            "Alur 3 — Rumah Kunci/Kosong",
+            "Pilih Rumah Kunci/Kosong lalu langsung menuju tombol Selesai."
         )
         flowGroup.addView(flowMandiriRadio)
         flowGroup.addView(flowOfflineRadio)
+        flowGroup.addView(flowRumahKosongRadio)
         flowCard.addView(flowGroup)
 
         val progressLabel = sectionLabel("Progres sesi")
-        val progressRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
+        val progressRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         completedValue = metricCard(progressRow, "Selesai", SUCCESS)
         skippedValue = metricCard(progressRow, "Dilewati", WARNING)
         processedValue = metricCard(progressRow, "Diproses", PRIMARY)
@@ -162,14 +166,8 @@ class MainActivity : Activity() {
             background = roundedDrawable(CANVAS, dp(8), HAIRLINE)
             isEnabled = false
         }
-        buttonRow.addView(
-            startButton,
-            LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(6) }
-        )
-        buttonRow.addView(
-            stopButton,
-            LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(6) }
-        )
+        buttonRow.addView(startButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(6) })
+        buttonRow.addView(stopButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(6) })
 
         val helperCard = card(dp(12), SURFACE_DARK).apply {
             setPadding(dp(16), dp(15), dp(16), dp(15))
@@ -181,21 +179,15 @@ class MainActivity : Activity() {
             setTypeface(Typeface.DEFAULT, Typeface.BOLD)
         })
         helperCard.addView(TextView(this).apply {
-            text = "Saat automasi berjalan, panel kecil muncul di atas Billman. Di sana kamu bisa melihat progres, halaman, tahap aktif, tindakan terbaru, serta Jeda/Lanjut."
+            text = "Panel di atas Billman menampilkan progres, halaman, state, Jeda/Lanjut, dan pilihan alur. Saat proses berjalan, Jeda dulu sebelum mengganti alur."
             textSize = 13f
             setTextColor(ON_DARK_SOFT)
             setPadding(0, dp(5), 0, 0)
         })
 
-        val permissionButton = actionButton(
-            "Buka Pengaturan Accessibility",
-            CANVAS,
-            INK
-        ).apply {
+        val permissionButton = actionButton("Buka Pengaturan Accessibility", CANVAS, INK).apply {
             background = roundedDrawable(CANVAS, dp(8), HAIRLINE)
-            setOnClickListener {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
 
         container.addView(eyebrow)
@@ -207,16 +199,10 @@ class MainActivity : Activity() {
         container.addView(flowCard)
         container.addView(progressLabel)
         container.addView(progressRow)
-        container.addView(detailCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(12)
-        })
+        container.addView(detailCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
         container.addView(buttonRow)
-        container.addView(helperCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(22)
-        })
-        container.addView(permissionButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply {
-            topMargin = dp(12)
-        })
+        container.addView(helperCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(22) })
+        container.addView(permissionButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply { topMargin = dp(12) })
 
         return ScrollView(this).apply {
             setBackgroundColor(CANVAS)
@@ -229,10 +215,7 @@ class MainActivity : Activity() {
             val sessionActive = AutomationRuntime.isRunning || AutomationRuntime.isPaused
             if (!sessionActive) {
                 val flow = selectedFlowFromUi()
-                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                    .edit()
-                    .putString(KEY_FLOW, flow.wireValue)
-                    .apply()
+                saveFlow(flow)
                 flowValue.text = flow.displayName
             }
         }
@@ -246,25 +229,17 @@ class MainActivity : Activity() {
             }
 
             val flow = selectedFlowFromUi()
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                .edit()
-                .putString(KEY_FLOW, flow.wireValue)
-                .apply()
+            saveFlow(flow)
 
             val intent = Intent(this, AutomationForegroundService::class.java).apply {
                 action = AutomationForegroundService.ACTION_START
                 putExtra(AutomationForegroundService.EXTRA_FLOW, flow.wireValue)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
 
             startButton.isEnabled = false
             stopButton.isEnabled = true
-            flowMandiriRadio.isEnabled = false
-            flowOfflineRadio.isEnabled = false
+            setFlowControlsEnabled(false)
             moveTaskToBack(true)
         }
 
@@ -277,21 +252,39 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun restoreFlowSelection() {
-        val saved = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-            .getString(KEY_FLOW, null)
-        val flow = AutomationFlow.fromWireValue(saved)
-        flowGroup.check(
-            if (flow == AutomationFlow.LUNAS_OFFLINE) flowOfflineRadio.id else flowMandiriRadio.id
-        )
+    private fun saveFlow(flow: AutomationFlow) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(KEY_FLOW, flow.wireValue)
+            .apply()
     }
 
-    private fun selectedFlowFromUi(): AutomationFlow =
-        if (flowGroup.checkedRadioButtonId == flowOfflineRadio.id) {
-            AutomationFlow.LUNAS_OFFLINE
-        } else {
-            AutomationFlow.LUNAS_MANDIRI
+    private fun readSavedFlow(): AutomationFlow = AutomationFlow.fromWireValue(
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_FLOW, null)
+    )
+
+    private fun restoreFlowSelection() = setFlowRadioChecked(readSavedFlow())
+
+    private fun setFlowRadioChecked(flow: AutomationFlow) {
+        val targetId = when (flow) {
+            AutomationFlow.LUNAS_MANDIRI -> flowMandiriRadio.id
+            AutomationFlow.LUNAS_OFFLINE -> flowOfflineRadio.id
+            AutomationFlow.RUMAH_KUNCI_KOSONG -> flowRumahKosongRadio.id
         }
+        if (flowGroup.checkedRadioButtonId != targetId) flowGroup.check(targetId)
+    }
+
+    private fun selectedFlowFromUi(): AutomationFlow = when (flowGroup.checkedRadioButtonId) {
+        flowOfflineRadio.id -> AutomationFlow.LUNAS_OFFLINE
+        flowRumahKosongRadio.id -> AutomationFlow.RUMAH_KUNCI_KOSONG
+        else -> AutomationFlow.LUNAS_MANDIRI
+    }
+
+    private fun setFlowControlsEnabled(enabled: Boolean) {
+        flowMandiriRadio.isEnabled = enabled
+        flowOfflineRadio.isEnabled = enabled
+        flowRumahKosongRadio.isEnabled = enabled
+    }
 
     private fun refreshUiState() {
         val enabled = isAccessibilityServiceEnabled()
@@ -315,11 +308,7 @@ class MainActivity : Activity() {
 
         val stats = if (AutomationRuntime.sessionStartedAt > 0L) {
             SqliteLocalDataStore(applicationContext).let { store ->
-                try {
-                    store.getSessionStats(AutomationRuntime.sessionStartedAt)
-                } finally {
-                    store.close()
-                }
+                try { store.getSessionStats(AutomationRuntime.sessionStartedAt) } finally { store.close() }
             }
         } else null
 
@@ -328,7 +317,8 @@ class MainActivity : Activity() {
         processedValue.text = (stats?.totalSeen ?: 0).toString()
 
         val sessionActive = AutomationRuntime.isRunning || AutomationRuntime.isPaused
-        val displayFlow = if (sessionActive) AutomationRuntime.selectedFlow else selectedFlowFromUi()
+        val displayFlow = if (sessionActive) AutomationRuntime.selectedFlow else readSavedFlow()
+        setFlowRadioChecked(displayFlow)
         flowValue.text = displayFlow.displayName
         pageValue.text = if (AutomationRuntime.currentPage != null && AutomationRuntime.totalPages != null) {
             "${AutomationRuntime.currentPage} dari ${AutomationRuntime.totalPages}"
@@ -338,8 +328,7 @@ class MainActivity : Activity() {
 
         startButton.isEnabled = enabled && !sessionActive
         stopButton.isEnabled = sessionActive
-        flowMandiriRadio.isEnabled = !sessionActive
-        flowOfflineRadio.isEnabled = !sessionActive
+        setFlowControlsEnabled(!sessionActive)
     }
 
     private fun card(radius: Int, color: Int): LinearLayout = LinearLayout(this).apply {
@@ -355,17 +344,16 @@ class MainActivity : Activity() {
         setPadding(0, dp(22), 0, dp(10))
     }
 
-    private fun flowRadioOption(title: String, description: String): RadioButton =
-        RadioButton(this).apply {
-            id = View.generateViewId()
-            text = "$title\n$description"
-            textSize = 13f
-            setTextColor(INK)
-            buttonTintList = ColorStateList.valueOf(PRIMARY)
-            gravity = Gravity.CENTER_VERTICAL
-            setLineSpacing(0f, 1.15f)
-            setPadding(0, dp(8), 0, dp(8))
-        }
+    private fun flowRadioOption(title: String, description: String): RadioButton = RadioButton(this).apply {
+        id = View.generateViewId()
+        text = "$title\n$description"
+        textSize = 13f
+        setTextColor(INK)
+        buttonTintList = ColorStateList.valueOf(PRIMARY)
+        gravity = Gravity.CENTER_VERTICAL
+        setLineSpacing(0f, 1.15f)
+        setPadding(0, dp(8), 0, dp(8))
+    }
 
     private fun metricCard(parent: LinearLayout, label: String, accent: Int): TextView {
         val box = LinearLayout(this).apply {
@@ -415,34 +403,29 @@ class MainActivity : Activity() {
         return valueView
     }
 
-    private fun actionButton(label: String, backgroundColor: Int, textColor: Int): Button =
-        Button(this).apply {
-            text = label
-            isAllCaps = false
-            textSize = 14f
-            setTypeface(Typeface.DEFAULT, Typeface.BOLD)
-            setTextColor(textColor)
-            background = roundedDrawable(backgroundColor, dp(8), null)
-            minHeight = 0
-            minimumHeight = 0
-        }
+    private fun actionButton(label: String, backgroundColor: Int, textColor: Int): Button = Button(this).apply {
+        text = label
+        isAllCaps = false
+        textSize = 14f
+        setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+        setTextColor(textColor)
+        background = roundedDrawable(backgroundColor, dp(8), null)
+        minHeight = 0
+        minimumHeight = 0
+    }
 
-    private fun roundedDrawable(color: Int, radius: Int, strokeColor: Int?): GradientDrawable =
-        GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = radius.toFloat()
-            if (strokeColor != null) setStroke(1, strokeColor)
-        }
+    private fun roundedDrawable(color: Int, radius: Int, strokeColor: Int?): GradientDrawable = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = radius.toFloat()
+        if (strokeColor != null) setStroke(1, strokeColor)
+    }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun isAccessibilityServiceEnabled(): Boolean {
         val manager = getSystemService(ACCESSIBILITY_SERVICE) as AccessibilityManager
-        val enabledServices = manager.getEnabledAccessibilityServiceList(
-            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
-        )
+        val enabledServices = manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
         val expectedComponent = "$packageName/${BillmanAccessibilityService::class.java.name}"
-
         return enabledServices.any { info ->
             info.resolveInfo.serviceInfo.let { serviceInfo ->
                 "${serviceInfo.packageName}/${serviceInfo.name}" == expectedComponent
