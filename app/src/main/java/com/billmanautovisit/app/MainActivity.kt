@@ -49,9 +49,6 @@ class MainActivity : Activity() {
     }
 
     private fun buildContentView(): ScrollView {
-        val density = resources.displayMetrics.density
-        fun dp(value: Int): Int = (value * density).toInt()
-
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(22), dp(20), dp(32))
@@ -111,27 +108,27 @@ class MainActivity : Activity() {
         statusCard.addView(statusTitle)
         statusCard.addView(statusDetail)
 
-        val progressLabel = sectionLabel("Progres sesi", dp)
+        val progressLabel = sectionLabel("Progres sesi")
         val progressRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        completedValue = metricCard(progressRow, "Selesai", SUCCESS, dp)
-        skippedValue = metricCard(progressRow, "Dilewati", WARNING, dp)
-        processedValue = metricCard(progressRow, "Diproses", PRIMARY, dp)
+        completedValue = metricCard(progressRow, "Selesai", SUCCESS)
+        skippedValue = metricCard(progressRow, "Dilewati", WARNING)
+        processedValue = metricCard(progressRow, "Diproses", PRIMARY)
 
         val detailCard = card(dp(12), SURFACE_SOFT).apply {
             setPadding(dp(16), dp(14), dp(16), dp(14))
         }
-        pageValue = detailLine(detailCard, "Halaman", "—", dp)
-        activeIdValue = detailLine(detailCard, "ID aktif", "—", dp)
-        latestActionValue = detailLine(detailCard, "Tindakan terakhir", "Belum ada tindakan", dp)
+        pageValue = detailLine(detailCard, "Halaman", "—")
+        activeIdValue = detailLine(detailCard, "ID aktif", "—")
+        latestActionValue = detailLine(detailCard, "Tindakan terakhir", "Belum ada tindakan")
 
         val buttonRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(18), 0, 0)
         }
-        startButton = actionButton("Mulai", PRIMARY, Color.WHITE, dp)
-        stopButton = actionButton("Hentikan", CANVAS, INK, dp).apply {
+        startButton = actionButton("Mulai", PRIMARY, Color.WHITE)
+        stopButton = actionButton("Hentikan", CANVAS, INK).apply {
             background = roundedDrawable(CANVAS, dp(8), HAIRLINE)
             isEnabled = false
         }
@@ -163,8 +160,7 @@ class MainActivity : Activity() {
         val permissionButton = actionButton(
             "Buka Pengaturan Accessibility",
             CANVAS,
-            INK,
-            dp
+            INK
         ).apply {
             background = roundedDrawable(CANVAS, dp(8), HAIRLINE)
             setOnClickListener {
@@ -249,8 +245,12 @@ class MainActivity : Activity() {
         statusDetail.text = status
 
         val stats = if (AutomationRuntime.sessionStartedAt > 0L) {
-            SqliteLocalDataStore(applicationContext).use { store ->
-                store.getSessionStats(AutomationRuntime.sessionStartedAt)
+            SqliteLocalDataStore(applicationContext).let { store ->
+                try {
+                    store.getSessionStats(AutomationRuntime.sessionStartedAt)
+                } finally {
+                    store.close()
+                }
             }
         } else null
 
@@ -274,7 +274,7 @@ class MainActivity : Activity() {
         background = roundedDrawable(color, radius, null)
     }
 
-    private fun sectionLabel(text: String, dp: (Int) -> Int): TextView = TextView(this).apply {
+    private fun sectionLabel(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 14f
         setTextColor(INK)
@@ -282,12 +282,7 @@ class MainActivity : Activity() {
         setPadding(0, dp(22), 0, dp(10))
     }
 
-    private fun metricCard(
-        parent: LinearLayout,
-        label: String,
-        accent: Int,
-        dp: (Int) -> Int
-    ): TextView {
+    private fun metricCard(parent: LinearLayout, label: String, accent: Int): TextView {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(12), dp(12), dp(12))
@@ -313,12 +308,7 @@ class MainActivity : Activity() {
         return value
     }
 
-    private fun detailLine(
-        parent: LinearLayout,
-        label: String,
-        value: String,
-        dp: (Int) -> Int
-    ): TextView {
+    private fun detailLine(parent: LinearLayout, label: String, value: String): TextView {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
@@ -340,21 +330,17 @@ class MainActivity : Activity() {
         return valueView
     }
 
-    private fun actionButton(
-        label: String,
-        backgroundColor: Int,
-        textColor: Int,
-        dp: (Int) -> Int
-    ): Button = Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 14f
-        setTypeface(Typeface.DEFAULT, Typeface.BOLD)
-        setTextColor(textColor)
-        background = roundedDrawable(backgroundColor, dp(8), null)
-        minHeight = 0
-        minimumHeight = 0
-    }
+    private fun actionButton(label: String, backgroundColor: Int, textColor: Int): Button =
+        Button(this).apply {
+            text = label
+            isAllCaps = false
+            textSize = 14f
+            setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+            setTextColor(textColor)
+            background = roundedDrawable(backgroundColor, dp(8), null)
+            minHeight = 0
+            minimumHeight = 0
+        }
 
     private fun roundedDrawable(color: Int, radius: Int, strokeColor: Int?): GradientDrawable =
         GradientDrawable().apply {
