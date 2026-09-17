@@ -111,15 +111,15 @@ class ScreenReader(
         return false
     }
 
-    /**
-     * Meminta Android membawa node yang sudah ada di Accessibility tree ke viewport.
-     * Ini lebih presisi daripada scroll global ketika target sudah diketahui.
-     */
     fun showNodeOnScreen(node: AccessibilityNodeInfo): Boolean {
         var current: AccessibilityNodeInfo? = node
         repeat(6) {
             val candidate = current ?: return false
-            if (candidate.performAction(AccessibilityNodeInfo.ACTION_SHOW_ON_SCREEN)) {
+            if (
+                candidate.performAction(
+                    AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id
+                )
+            ) {
                 return true
             }
             current = candidate.parent
@@ -127,10 +127,6 @@ class ScreenReader(
         return false
     }
 
-    /**
-     * Scroll container terdekat milik node target. Jika tidak ada ancestor scrollable,
-     * fallback ke scrollable pertama pada window aktif.
-     */
     fun scrollForwardFrom(node: AccessibilityNodeInfo): Boolean {
         var current: AccessibilityNodeInfo? = node.parent
         repeat(10) {
