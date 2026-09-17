@@ -10,8 +10,8 @@ android {
         applicationId = "com.billmanautovisit.app"
         minSdk = 26
         targetSdk = 32
-        versionCode = 21
-        versionName = "0.9.7-direct-selesai-after-no"
+        versionCode = 22
+        versionName = "0.10.0-flow-presets"
     }
 
     buildTypes {
