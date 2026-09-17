@@ -1,6 +1,8 @@
 package com.billmanautovisit.app.overlay
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -12,7 +14,10 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
+import com.billmanautovisit.app.core.AutomationFlow
 import com.billmanautovisit.app.core.AutomationRuntime
 import com.billmanautovisit.app.data.LocalDataStore
 import com.billmanautovisit.app.screen.ScreenReader
@@ -30,12 +35,18 @@ class TrackingOverlayController(
     private var rootView: LinearLayout? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     private var hiddenForSessionStartedAt: Long = -1L
+    private var updatingFlowSelection = false
 
     private lateinit var statusText: TextView
     private lateinit var progressText: TextView
     private lateinit var pageText: TextView
     private lateinit var stateText: TextView
     private lateinit var actionText: TextView
+    private lateinit var flowGroup: RadioGroup
+    private lateinit var flowMandiriRadio: RadioButton
+    private lateinit var flowOfflineRadio: RadioButton
+    private lateinit var flowRumahKosongRadio: RadioButton
+    private lateinit var flowHintText: TextView
     private lateinit var pauseButton: Button
 
     private val refreshRunnable = object : Runnable {
@@ -73,12 +84,7 @@ class TrackingOverlayController(
             AutomationRuntime.setPageInfo(it.currentPage, it.totalPages)
         }
 
-        val stats = if (sessionId > 0L) {
-            dataStore.getSessionStats(sessionId)
-        } else {
-            null
-        }
-
+        val stats = if (sessionId > 0L) dataStore.getSessionStats(sessionId) else null
         val paused = AutomationRuntime.isPaused
         val completed = AutomationRuntime.statusMessage.startsWith("COMPLETED")
         val error = AutomationRuntime.statusMessage.startsWith("ERROR")
@@ -118,6 +124,15 @@ class TrackingOverlayController(
             if (!id.isNullOrBlank()) append("  •  ID ").append(id)
         }
         actionText.text = AutomationRuntime.latestAction
+
+        syncFlowSelector(AutomationRuntime.selectedFlow)
+        val canChangeFlow = paused || !AutomationRuntime.isRunning
+        setFlowSelectorEnabled(canChangeFlow)
+        flowHintText.text = if (AutomationRuntime.isRunning && !paused) {
+            "Jeda dulu untuk mengganti alur"
+        } else {
+            "Alur aktif: ${AutomationRuntime.selectedFlow.displayName}"
+        }
 
         pauseButton.text = if (paused) "Lanjut" else "Jeda"
         pauseButton.isEnabled = !completed && !error && (AutomationRuntime.isRunning || paused)
@@ -194,7 +209,42 @@ class TrackingOverlayController(
             textSize = 12f
             setTextColor(MUTED)
             maxLines = 2
-            setPadding(0, dp(3), 0, dp(10))
+            setPadding(0, dp(3), 0, dp(8))
+        }
+
+        val flowLabel = TextView(service).apply {
+            text = "Pilih alur"
+            textSize = 12f
+            setTextColor(INK)
+            setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+            setPadding(0, dp(4), 0, dp(2))
+        }
+
+        flowGroup = RadioGroup(service).apply {
+            orientation = RadioGroup.VERTICAL
+        }
+        flowMandiriRadio = overlayFlowRadio("1 · Lunas Mandiri")
+        flowOfflineRadio = overlayFlowRadio("2 · Lunas Offline")
+        flowRumahKosongRadio = overlayFlowRadio("3 · Rumah Kunci/Kosong")
+        flowGroup.addView(flowMandiriRadio)
+        flowGroup.addView(flowOfflineRadio)
+        flowGroup.addView(flowRumahKosongRadio)
+        flowGroup.setOnCheckedChangeListener { _, _ ->
+            if (updatingFlowSelection) return@setOnCheckedChangeListener
+            val flow = selectedFlowFromOverlay()
+            if (AutomationRuntime.changeSelectedFlow(flow)) {
+                saveFlow(flow)
+                AutomationRuntime.setLatestAction("Alur diubah dari panel: ${flow.displayName}")
+                refresh()
+            } else {
+                syncFlowSelector(AutomationRuntime.selectedFlow)
+            }
+        }
+
+        flowHintText = TextView(service).apply {
+            textSize = 10.5f
+            setTextColor(MUTED)
+            setPadding(0, dp(2), 0, dp(8))
         }
 
         pauseButton = Button(service).apply {
@@ -222,28 +272,71 @@ class TrackingOverlayController(
         card.addView(pageText)
         card.addView(stateText)
         card.addView(actionText)
-        card.addView(
-            pauseButton,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40))
-        )
+        card.addView(flowLabel)
+        card.addView(flowGroup)
+        card.addView(flowHintText)
+        card.addView(pauseButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40)))
 
         val params = WindowManager.LayoutParams(
-            dp(300),
+            dp(310),
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
             x = dp(12)
-            y = dp(84)
+            y = dp(72)
         }
 
         makeDraggable(card, params)
         windowManager.addView(card, params)
         rootView = card
         layoutParams = params
+        syncFlowSelector(AutomationRuntime.selectedFlow)
+    }
+
+    private fun overlayFlowRadio(label: String): RadioButton = RadioButton(service).apply {
+        id = View.generateViewId()
+        text = label
+        textSize = 11.5f
+        setTextColor(INK)
+        buttonTintList = ColorStateList.valueOf(PRIMARY)
+        setPadding(0, 0, 0, 0)
+        minHeight = 0
+        minimumHeight = 0
+    }
+
+    private fun selectedFlowFromOverlay(): AutomationFlow = when (flowGroup.checkedRadioButtonId) {
+        flowOfflineRadio.id -> AutomationFlow.LUNAS_OFFLINE
+        flowRumahKosongRadio.id -> AutomationFlow.RUMAH_KUNCI_KOSONG
+        else -> AutomationFlow.LUNAS_MANDIRI
+    }
+
+    private fun syncFlowSelector(flow: AutomationFlow) {
+        if (!::flowGroup.isInitialized) return
+        val targetId = when (flow) {
+            AutomationFlow.LUNAS_MANDIRI -> flowMandiriRadio.id
+            AutomationFlow.LUNAS_OFFLINE -> flowOfflineRadio.id
+            AutomationFlow.RUMAH_KUNCI_KOSONG -> flowRumahKosongRadio.id
+        }
+        if (flowGroup.checkedRadioButtonId == targetId) return
+        updatingFlowSelection = true
+        flowGroup.check(targetId)
+        updatingFlowSelection = false
+    }
+
+    private fun setFlowSelectorEnabled(enabled: Boolean) {
+        flowMandiriRadio.isEnabled = enabled
+        flowOfflineRadio.isEnabled = enabled
+        flowRumahKosongRadio.isEnabled = enabled
+    }
+
+    private fun saveFlow(flow: AutomationFlow) {
+        service.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_FLOW, flow.wireValue)
+            .apply()
     }
 
     private fun makeDraggable(view: View, params: WindowManager.LayoutParams) {
@@ -269,9 +362,7 @@ class TrackingOverlayController(
                         params.y = (startY + dy).coerceAtLeast(0)
                         rootView?.let { windowManager.updateViewLayout(it, params) }
                         true
-                    } else {
-                        false
-                    }
+                    } else false
                 }
                 else -> false
             }
@@ -290,14 +381,15 @@ class TrackingOverlayController(
         .split('_')
         .joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
 
-    private fun roundedDrawable(color: Int, radius: Int, strokeColor: Int?): GradientDrawable =
-        GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = radius.toFloat()
-            if (strokeColor != null) setStroke(1, strokeColor)
-        }
+    private fun roundedDrawable(color: Int, radius: Int, strokeColor: Int?): GradientDrawable = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = radius.toFloat()
+        if (strokeColor != null) setStroke(1, strokeColor)
+    }
 
     companion object {
+        private const val PREFS_NAME = "billman_auto_visit_prefs"
+        private const val KEY_FLOW = "selected_flow"
         private const val REFRESH_INTERVAL_MS = 500L
         private val CANVAS = Color.rgb(250, 249, 245)
         private val PRIMARY = Color.rgb(204, 120, 92)
