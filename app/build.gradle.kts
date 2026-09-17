@@ -10,8 +10,8 @@ android {
         applicationId = "com.billmanautovisit.app"
         minSdk = 26
         targetSdk = 32
-        versionCode = 14
-        versionName = "0.9.0-ui-tracking"
+        versionCode = 15
+        versionName = "0.9.1-resident-name"
     }
 
     buildTypes {
