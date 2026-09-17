@@ -10,8 +10,8 @@ android {
         applicationId = "com.billmanautovisit.app"
         minSdk = 26
         targetSdk = 32
-        versionCode = 12
-        versionName = "0.7.1-migration-camera-hotfix"
+        versionCode = 13
+        versionName = "0.8.0-pagination"
     }
 
     buildTypes {
