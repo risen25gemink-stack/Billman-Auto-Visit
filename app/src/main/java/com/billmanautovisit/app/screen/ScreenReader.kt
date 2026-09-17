@@ -76,9 +76,17 @@ class ScreenReader(
             ?: findNodeByContentDescription("prev page")
             ?: findNodeByContentDescription("Previous")
 
+    /**
+     * Menemukan field editable yang berasosiasi dengan sebuah label form.
+     * Billman dapat merender label wajib sebagai "Nama Penghuni*", jadi label
+     * dinormalisasi sebelum dibandingkan. Setelah label ditemukan, pencarian
+     * diprioritaskan ke sibling/branch SETELAH label agar tidak salah mengambil
+     * field berikutnya seperti Input Nomor WA.
+     */
     fun findEditableFieldByLabel(label: String): AccessibilityNodeInfo? {
         val root = currentRoot() ?: return null
 
+        // Beberapa EditText mengekspos hint/contentDescription label secara langsung.
         val directlyLabeledField = findFirst(root) { node ->
             isEditable(node) && nodeMatchesLabel(node, label)
         }
@@ -87,8 +95,13 @@ class ScreenReader(
         val labelNode = findFirst(root) { node -> nodeMatchesLabel(node, label) } ?: return null
         if (isEditable(labelNode)) return labelNode
 
+        // Jika EditText memang anak langsung dari container label.
         findEditableDescendant(labelNode)?.let { return it }
 
+        // Cari field pada sibling setelah label, lalu naik beberapa level container.
+        findEditableAfterNode(labelNode)?.let { return it }
+
+        // Fallback lama, tetapi dibatasi ke ancestor terdekat.
         var ancestor = labelNode.parent
         repeat(3) {
             val current = ancestor ?: return@repeat
@@ -215,13 +228,21 @@ class ScreenReader(
         }
 
     private fun nodeMatchesLabel(node: AccessibilityNodeInfo, label: String): Boolean {
+        val wanted = normalizeFormLabel(label)
         val values = listOfNotNull(
             node.text?.toString(),
             node.hintText?.toString(),
             node.contentDescription?.toString()
-        ).map { it.trim() }
-        return values.any { it.equals(label, ignoreCase = true) }
+        )
+        return values.any { normalizeFormLabel(it) == wanted }
     }
+
+    private fun normalizeFormLabel(value: String): String =
+        value
+            .trim()
+            .replace(Regex("[\\s:*]+$"), "")
+            .replace(Regex("\\s+"), " ")
+            .lowercase()
 
     private fun isEditable(node: AccessibilityNodeInfo): Boolean =
         node.isEditable || node.className?.toString() == "android.widget.EditText"
@@ -233,6 +254,36 @@ class ScreenReader(
             findEditableDescendant(child)?.let { return it }
         }
         return null
+    }
+
+    private fun findEditableAfterNode(startNode: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var branch: AccessibilityNodeInfo? = startNode
+        var parent = startNode.parent
+
+        repeat(5) {
+            val currentBranch = branch ?: return@repeat
+            val currentParent = parent ?: return@repeat
+
+            val branchIndex = findChildIndex(currentParent, currentBranch)
+            if (branchIndex >= 0) {
+                for (index in (branchIndex + 1) until currentParent.childCount) {
+                    val sibling = currentParent.getChild(index) ?: continue
+                    findEditableDescendant(sibling)?.let { return it }
+                }
+            }
+
+            branch = currentParent
+            parent = currentParent.parent
+        }
+        return null
+    }
+
+    private fun findChildIndex(parent: AccessibilityNodeInfo, child: AccessibilityNodeInfo): Int {
+        for (index in 0 until parent.childCount) {
+            val candidate = parent.getChild(index) ?: continue
+            if (candidate == child) return index
+        }
+        return -1
     }
 
     private fun collectVisibleTexts(node: AccessibilityNodeInfo, output: MutableList<String>) {
