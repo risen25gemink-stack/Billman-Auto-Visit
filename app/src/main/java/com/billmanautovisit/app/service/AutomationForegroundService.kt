@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.IBinder
 import com.billmanautovisit.app.MainActivity
 import com.billmanautovisit.app.R
+import com.billmanautovisit.app.core.AutomationFlow
 import com.billmanautovisit.app.core.AutomationRuntime
 
 class AutomationForegroundService : Service() {
@@ -16,6 +17,7 @@ class AutomationForegroundService : Service() {
     companion object {
         const val ACTION_START = "com.billmanautovisit.app.action.START"
         const val ACTION_STOP = "com.billmanautovisit.app.action.STOP"
+        const val EXTRA_FLOW = "com.billmanautovisit.app.extra.FLOW"
         private const val CHANNEL_ID = "billman_automation"
         private const val NOTIFICATION_ID = 1001
     }
@@ -28,7 +30,8 @@ class AutomationForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return when (intent?.action) {
             ACTION_START -> {
-                AutomationRuntime.startSession()
+                val flow = AutomationFlow.fromWireValue(intent.getStringExtra(EXTRA_FLOW))
+                AutomationRuntime.startSession(flow)
                 startForeground(NOTIFICATION_ID, buildNotification())
                 START_STICKY
             }
@@ -88,7 +91,7 @@ class AutomationForegroundService : Service() {
         return android.app.Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(getString(R.string.notification_title))
-            .setContentText("State: ${AutomationRuntime.currentState.name}")
+            .setContentText("${AutomationRuntime.selectedFlow.displayName} · ${AutomationRuntime.currentState.name}")
             .setContentIntent(openAppPendingIntent)
             .setOngoing(true)
             .addAction(
