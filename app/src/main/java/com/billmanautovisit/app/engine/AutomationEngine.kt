@@ -5,6 +5,7 @@ import com.billmanautovisit.app.camera.CameraTapper
 import com.billmanautovisit.app.core.AutomationRuntime
 import com.billmanautovisit.app.core.AutomationState
 import com.billmanautovisit.app.data.LocalDataStore
+import com.billmanautovisit.app.screen.PaginationInfo
 import com.billmanautovisit.app.screen.ScreenReader
 import com.billmanautovisit.app.screen.WorkOrderCandidate
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +27,8 @@ class AutomationEngine(
     private var candidatesOnScreen: List<WorkOrderCandidate> = emptyList()
     private var currentRecordId: Long? = null
     private var camera1RetryCount: Int = 0
+    private var paginationSessionStartedAt: Long = 0L
+    private var paginationNormalizedToFirstPage: Boolean = false
 
     fun onBillmanEvent() {
         if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return
@@ -61,9 +64,7 @@ class AutomationEngine(
                 AutomationState.CAMERA_SHUTTER_1 -> handleCameraShutter1()
                 AutomationState.BACK_TO_MENUJU_WO -> handleBackToMenujuWo()
                 AutomationState.TAP_VISIT -> {
-                    AutomationRuntime.setStatus(
-                        "RUNNING: TAP_VISIT — uji berhenti sebelum menekan Visit"
-                    )
+                    AutomationRuntime.setStatus("RUNNING: TAP_VISIT")
                     false
                 }
                 else -> false
@@ -84,6 +85,26 @@ class AutomationEngine(
             return false
         }
 
+        resetPaginationStateForNewSessionIfNeeded()
+        if (AutomationRuntime.currentIdPelanggan == null) {
+            currentRecordId = null
+        }
+
+        var pageInfo = waitWithRetry(AutomationState.WO_LIST) {
+            screenReader.readPaginationInfo()
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (pageInfo == null) {
+            failCurrentState("Indikator pagination 'Halaman X dari Y' tidak ditemukan")
+            return false
+        }
+
+        if (!paginationNormalizedToFirstPage) {
+            pageInfo = normalizeToFirstPage(pageInfo) ?: return false
+            paginationNormalizedToFirstPage = true
+        }
+
         candidatesOnScreen = poll(WAIT_TIMEOUT_MS) {
             screenReader.readWorkOrderCandidates().takeIf { it.isNotEmpty() }
         } ?: emptyList()
@@ -92,24 +113,27 @@ class AutomationEngine(
             null,
             AutomationState.WO_LIST.name,
             "INFO",
-            "Ditemukan ${candidatesOnScreen.size} kandidat WO pada layar"
+            "Halaman ${pageInfo.currentPage}/${pageInfo.totalPages}: ditemukan ${candidatesOnScreen.size} kandidat WO"
         )
-
-        if (candidatesOnScreen.isEmpty()) return false
+        AutomationRuntime.setStatus(
+            "RUNNING: WO_LIST — halaman ${pageInfo.currentPage}/${pageInfo.totalPages}"
+        )
 
         AutomationRuntime.transitionTo(AutomationState.READ_ID)
         return true
     }
 
-    private fun handleReadId(): Boolean {
-        if (candidatesOnScreen.isEmpty()) return false
-
+    private suspend fun handleReadId(): Boolean {
         val candidate = candidatesOnScreen.firstOrNull { candidate ->
             !dataStore.hasWorkOrderInSession(
                 candidate.idPelanggan,
                 AutomationRuntime.sessionStartedAt
             )
-        } ?: return false
+        }
+
+        if (candidate == null) {
+            return advancePageOrComplete()
+        }
 
         currentRecordId = dataStore.beginWorkOrder(
             idPelanggan = candidate.idPelanggan,
@@ -130,6 +154,136 @@ class AutomationEngine(
         )
         AutomationRuntime.transitionTo(AutomationState.INPUT_ID)
         return true
+    }
+
+    private suspend fun normalizeToFirstPage(initial: PaginationInfo): PaginationInfo? {
+        var pageInfo = initial
+        var safetyCount = 0
+
+        while (
+            AutomationRuntime.isRunning &&
+            !AutomationRuntime.stopRequested &&
+            pageInfo.currentPage > 1
+        ) {
+            if (safetyCount >= MAX_PAGINATION_NAVIGATION_STEPS) {
+                failCurrentState("Gagal menormalkan pagination ke halaman 1")
+                return null
+            }
+
+            val previousButton = waitWithRetry(AutomationState.WO_LIST) {
+                screenReader.findPreviousPageButton()?.takeIf {
+                    it.isVisibleToUser && screenReader.isNodeOrClickableAncestorEnabled(it)
+                }
+            }
+
+            if (previousButton == null) {
+                failCurrentState("Panah halaman sebelumnya tidak ditemukan pada halaman ${pageInfo.currentPage}")
+                return null
+            }
+
+            val oldPage = pageInfo.currentPage
+            if (!screenReader.clickNode(previousButton)) {
+                failCurrentState("Gagal menekan panah kiri pagination pada halaman $oldPage")
+                return null
+            }
+
+            val moved = poll(WAIT_TIMEOUT_MS) {
+                screenReader.readPaginationInfo()?.takeIf { it.currentPage < oldPage }
+            }
+
+            if (moved == null) {
+                failCurrentState("Nomor halaman tidak berubah setelah menekan panah kiri dari halaman $oldPage")
+                return null
+            }
+
+            pageInfo = moved
+            safetyCount += 1
+            dataStore.addLog(
+                null,
+                AutomationState.WO_LIST.name,
+                "INFO",
+                "Normalisasi pagination: pindah ke halaman ${pageInfo.currentPage}/${pageInfo.totalPages}"
+            )
+        }
+
+        return pageInfo
+    }
+
+    private suspend fun advancePageOrComplete(): Boolean {
+        val pageInfo = waitWithRetry(AutomationState.READ_ID) {
+            screenReader.readPaginationInfo()
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (pageInfo == null) {
+            failCurrentState("Tidak dapat membaca pagination setelah kandidat halaman selesai")
+            return false
+        }
+
+        if (pageInfo.currentPage >= pageInfo.totalPages) {
+            dataStore.addLog(
+                null,
+                AutomationState.READ_ID.name,
+                "INFO",
+                "Tidak ada ID pelanggan baru sampai halaman terakhir ${pageInfo.currentPage}/${pageInfo.totalPages}; sesi Completed"
+            )
+            candidatesOnScreen = emptyList()
+            currentRecordId = null
+            AutomationRuntime.complete(
+                "semua halaman 1-${pageInfo.totalPages} sudah diperiksa dan tidak ada ID pelanggan baru"
+            )
+            return false
+        }
+
+        val nextButton = waitWithRetry(AutomationState.READ_ID) {
+            screenReader.findNextPageButton()?.takeIf {
+                it.isVisibleToUser && screenReader.isNodeOrClickableAncestorEnabled(it)
+            }
+        }
+
+        if (!AutomationRuntime.isRunning) return false
+        if (nextButton == null) {
+            failCurrentState("Panah kanan pagination tidak ditemukan pada halaman ${pageInfo.currentPage}")
+            return false
+        }
+
+        val oldPage = pageInfo.currentPage
+        if (!screenReader.clickNode(nextButton)) {
+            failCurrentState("Gagal menekan panah kanan pagination pada halaman $oldPage")
+            return false
+        }
+
+        val moved = poll(WAIT_TIMEOUT_MS) {
+            screenReader.readPaginationInfo()?.takeIf { it.currentPage > oldPage }
+        }
+
+        if (moved == null) {
+            failCurrentState("Nomor halaman tidak bertambah setelah menekan panah kanan dari halaman $oldPage")
+            return false
+        }
+
+        candidatesOnScreen = emptyList()
+        currentRecordId = null
+        AutomationRuntime.setCurrentWorkOrder(null, null)
+        dataStore.addLog(
+            null,
+            AutomationState.READ_ID.name,
+            "INFO",
+            "Halaman $oldPage selesai; pindah ke halaman ${moved.currentPage}/${moved.totalPages}"
+        )
+        AutomationRuntime.transitionTo(AutomationState.WO_LIST)
+        return true
+    }
+
+    private fun resetPaginationStateForNewSessionIfNeeded() {
+        val sessionStartedAt = AutomationRuntime.sessionStartedAt
+        if (paginationSessionStartedAt == sessionStartedAt) return
+
+        paginationSessionStartedAt = sessionStartedAt
+        paginationNormalizedToFirstPage = false
+        candidatesOnScreen = emptyList()
+        currentRecordId = null
+        camera1RetryCount = 0
     }
 
     private suspend fun handleInputId(): Boolean {
@@ -508,6 +662,7 @@ class AutomationEngine(
         private const val MAX_RETRY_PER_STATE = 2
         private const val MAX_BACK_ATTEMPTS = 5
         private const val MAX_CAMERA_OPEN_RETRY = 1
+        private const val MAX_PAGINATION_NAVIGATION_STEPS = 100
 
         private const val BTN_TAGGING_ID = "dev.iconpln.mims:id/btn_tagging"
         private const val BTN_TAKE_PICTURE_ID = "dev.iconpln.mims:id/btn_take_picture"
