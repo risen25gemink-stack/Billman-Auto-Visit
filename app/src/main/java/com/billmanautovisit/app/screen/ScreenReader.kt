@@ -11,11 +11,20 @@ data class WorkOrderCandidate(
     val idPelanggan: String
 )
 
+data class PaginationInfo(
+    val currentPage: Int,
+    val totalPages: Int
+)
+
 class ScreenReader(
     private val service: AccessibilityService
 ) {
     private val regexKodeWo = Regex("^P323\\d+$")
     private val regexIdPelanggan = Regex("^323\\d{6,}$")
+    private val regexPagination = Regex(
+        "Halaman\\s+(\\d+)\\s+dari\\s+(\\d+)",
+        RegexOption.IGNORE_CASE
+    )
 
     fun currentRoot(): AccessibilityNodeInfo? = service.rootInActiveWindow
 
@@ -41,6 +50,31 @@ class ScreenReader(
             node.contentDescription?.toString()?.trim()?.equals(desc, ignoreCase = true) == true
         }
     }
+
+    fun readPaginationInfo(): PaginationInfo? {
+        val root = currentRoot() ?: return null
+        val pageNode = findFirst(root) { node ->
+            val text = node.text?.toString()?.trim().orEmpty()
+            regexPagination.containsMatchIn(text)
+        } ?: return null
+
+        val text = pageNode.text?.toString()?.trim().orEmpty()
+        val match = regexPagination.find(text) ?: return null
+        val current = match.groupValues.getOrNull(1)?.toIntOrNull() ?: return null
+        val total = match.groupValues.getOrNull(2)?.toIntOrNull() ?: return null
+        if (current < 1 || total < 1 || current > total) return null
+        return PaginationInfo(current, total)
+    }
+
+    fun findNextPageButton(): AccessibilityNodeInfo? =
+        findFirstResourceId(NEXT_PAGE_IDS)
+            ?: findNodeByContentDescription("next page")
+            ?: findNodeByContentDescription("Next")
+
+    fun findPreviousPageButton(): AccessibilityNodeInfo? =
+        findFirstResourceId(PREVIOUS_PAGE_IDS)
+            ?: findNodeByContentDescription("prev page")
+            ?: findNodeByContentDescription("Previous")
 
     fun findEditableFieldByLabel(label: String): AccessibilityNodeInfo? {
         val root = currentRoot() ?: return null
@@ -168,6 +202,13 @@ class ScreenReader(
     fun performBack(): Boolean =
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
 
+    private fun findFirstResourceId(ids: List<String>): AccessibilityNodeInfo? {
+        for (id in ids) {
+            findNodeByResourceId(id)?.let { return it }
+        }
+        return null
+    }
+
     private fun supportsClick(node: AccessibilityNodeInfo): Boolean =
         node.isClickable || node.actionList.any { action ->
             action.id == AccessibilityNodeInfo.ACTION_CLICK
@@ -227,5 +268,14 @@ class ScreenReader(
 
     companion object {
         private const val BILLMAN_TAKE_PICTURE_ID = "dev.iconpln.mims:id/btn_take_picture"
+
+        private val NEXT_PAGE_IDS = listOf(
+            "dev.iconpln.mims:id/iv_next_page",
+            "dev.iconpln.mims:id/btn_next_page"
+        )
+        private val PREVIOUS_PAGE_IDS = listOf(
+            "dev.iconpln.mims:id/iv_previous_page",
+            "dev.iconpln.mims:id/btn_prev_page"
+        )
     }
 }
