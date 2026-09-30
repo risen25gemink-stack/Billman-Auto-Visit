@@ -199,6 +199,37 @@ class SqliteLocalDataStore(context: Context) :
         return result.asReversed()
     }
 
+    override fun getRecentLogs(sessionStartedAt: Long, limit: Int): List<AutomationLogEntry> {
+        val safeLimit = limit.coerceIn(1, 500)
+        val result = mutableListOf<AutomationLogEntry>()
+        readableDatabase.rawQuery(
+            """
+            SELECT l.timestamp, l.state, l.level, l.message
+            FROM automation_logs l
+            LEFT JOIN work_order_records w ON w.id = l.work_order_record_id
+            WHERE l.timestamp >= ?
+               OR w.started_at >= ?
+            ORDER BY l.id DESC
+            LIMIT ?
+            """.trimIndent(),
+            arrayOf(
+                sessionStartedAt.toString(),
+                sessionStartedAt.toString(),
+                safeLimit.toString()
+            )
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result += AutomationLogEntry(
+                    timestamp = cursor.getLong(0),
+                    state = cursor.getString(1),
+                    level = cursor.getString(2),
+                    message = cursor.getString(3)
+                )
+            }
+        }
+        return result.asReversed()
+    }
+
     override fun getSessionStats(sessionStartedAt: Long): SessionStats {
         var completed = 0
         var skipped = 0
