@@ -267,11 +267,20 @@ class VisitFlowController(
             if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return false
 
             val cameraNode = waitWithRetry(AutomationState.TAP_CAMERA_2) {
-                screenReader.findNodeByResourceId(resourceId)
-                    ?.takeIf {
-                        it.isVisibleToUser &&
-                            screenReader.isNodeOrClickableAncestorEnabled(it)
-                    }
+                val node = screenReader.findNodeByResourceId(resourceId)
+
+                if (node != null && node.isVisibleToUser && node.isEnabled) {
+                    // Jangan mensyaratkan node ImageView melaporkan clickable=true.
+                    // Pada snapshot Billman V3.0.2, target kamera invoice adalah
+                    // ImageView; ACTION_CLICK bisa diteruskan ke ancestor-nya.
+                    node
+                } else {
+                    // Jika target belum berada di viewport, paksa scroll dan coba
+                    // lagi pada polling berikutnya. Ini juga menangani kasus node
+                    // sudah ada di accessibility tree tetapi belum visibleToUser.
+                    screenReader.scrollForwardOnce()
+                    null
+                }
             }
 
             if (cameraNode == null) {
@@ -315,6 +324,11 @@ class VisitFlowController(
                 "WARNING",
                 "Target invoice $resourceId terklik tetapi shutter kamera belum muncul; mencoba target berikutnya"
             )
+
+            // Beri kesempatan layar Visit WO kembali/settle sebelum selector
+            // berikutnya dicari. Tanpa ini, accessibility tree kadang masih
+            // membawa node lama dari frame sebelumnya.
+            delay(400)
         }
 
         failCurrentState("Kamera invoice tidak terbuka setelah mencoba seluruh target selector")
