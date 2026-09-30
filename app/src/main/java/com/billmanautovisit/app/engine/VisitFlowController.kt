@@ -227,7 +227,9 @@ class VisitFlowController(
         }
 
         val cameraVisible = waitWithRetry(AutomationState.VISIT_WO_SCREEN) {
-            val camera = screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_ID)
+            val camera =
+                screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_BUTTON_ID)
+                    ?: screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_IMAGE_ID)
             if (camera != null && camera.isVisibleToUser) {
                 true
             } else {
