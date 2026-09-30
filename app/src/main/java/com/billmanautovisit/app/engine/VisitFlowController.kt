@@ -18,6 +18,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Menangani alur Visit sampai CHECK_WAJIB.
  *
+ * Untuk flow TUL/VI-01, setelah layar Visit WO terverifikasi controller
+ * langsung menyerahkan alur ke TUL_PHOTO_BA. Foto invoice bukan bagian dari
+ * alur TUL yang ditargetkan pada UI Billman V3.0.2.
+ *
  * Penting: INPUT_MIGRASI sengaja TIDAK ditangani di controller ini.
  * Setelah CHECK_WAJIB selesai, state berpindah ke INPUT_MIGRASI lalu controller
  * berhenti. INPUT_MIGRASI ditangani eksklusif oleh BillmanAccessibilityService
@@ -217,36 +221,24 @@ class VisitFlowController(
                 failCurrentState("Alur TUL dipilih tetapi badge VI-01 tidak ditemukan")
                 return false
             }
+
+            currentRecordId?.let {
+                dataStore.updateLastState(it, AutomationState.TUL_PHOTO_BA.name)
+            }
             dataStore.addLog(
                 currentRecordId,
-                AutomationState.VISIT_WO_SCREEN.name,
+                AutomationState.TUL_PHOTO_BA.name,
                 "INFO",
-                "Badge VI-01 terdeteksi; menjalankan Alur TUL"
+                "Badge VI-01 terdeteksi; melewati foto invoice dan menuju kamera BA TUL"
             )
-            AutomationRuntime.setLatestAction("Badge VI-01 terdeteksi; Alur TUL aktif")
-        }
-
-        val cameraVisible = waitWithRetry(AutomationState.VISIT_WO_SCREEN) {
-            val camera =
-                screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_BUTTON_ID)
-                    ?: screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_IMAGE_ID)
-            if (camera != null && camera.isVisibleToUser) {
-                true
-            } else {
-                screenReader.scrollForwardOnce()
-                null
-            }
-        }
-
-        if (!AutomationRuntime.isRunning) return false
-        if (cameraVisible != true) {
-            failCurrentState("Ikon kamera Foto Penyerahan Invoice tidak ditemukan setelah scroll")
-            return false
+            AutomationRuntime.setLatestAction("Badge VI-01 terdeteksi; menuju foto BA TUL")
+            AutomationRuntime.transitionTo(AutomationState.TUL_PHOTO_BA)
+            return true
         }
 
         updateStateAndLog(
             AutomationState.VISIT_WO_SCREEN,
-            "Layar Visit WO terdeteksi dan kamera invoice terlihat"
+            "Layar Visit WO terdeteksi; mencari kamera invoice"
         )
         AutomationRuntime.transitionTo(AutomationState.TAP_CAMERA_2)
         return true
