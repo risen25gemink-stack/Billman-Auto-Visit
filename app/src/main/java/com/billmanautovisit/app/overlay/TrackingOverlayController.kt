@@ -46,6 +46,7 @@ class TrackingOverlayController(
     private lateinit var flowMandiriRadio: RadioButton
     private lateinit var flowOfflineRadio: RadioButton
     private lateinit var flowRumahKosongRadio: RadioButton
+    private lateinit var flowTulRadio: RadioButton
     private lateinit var flowHintText: TextView
     private lateinit var pauseButton: Button
 
@@ -229,6 +230,8 @@ class TrackingOverlayController(
         flowGroup.addView(flowMandiriRadio)
         flowGroup.addView(flowOfflineRadio)
         flowGroup.addView(flowRumahKosongRadio)
+        flowTulRadio = overlayFlowRadio("Alur TUL")
+        flowGroup.addView(flowTulRadio)
         flowGroup.setOnCheckedChangeListener { _, _ ->
             if (updatingFlowSelection) return@setOnCheckedChangeListener
             val flow = selectedFlowFromOverlay()
@@ -310,6 +313,7 @@ class TrackingOverlayController(
     private fun selectedFlowFromOverlay(): AutomationFlow = when (flowGroup.checkedRadioButtonId) {
         flowOfflineRadio.id -> AutomationFlow.LUNAS_OFFLINE
         flowRumahKosongRadio.id -> AutomationFlow.RUMAH_KUNCI_KOSONG
+        flowTulRadio.id -> AutomationFlow.TUL
         else -> AutomationFlow.LUNAS_MANDIRI
     }
 
@@ -319,6 +323,7 @@ class TrackingOverlayController(
             AutomationFlow.LUNAS_MANDIRI -> flowMandiriRadio.id
             AutomationFlow.LUNAS_OFFLINE -> flowOfflineRadio.id
             AutomationFlow.RUMAH_KUNCI_KOSONG -> flowRumahKosongRadio.id
+            AutomationFlow.TUL -> flowTulRadio.id
         }
         if (flowGroup.checkedRadioButtonId == targetId) return
         updatingFlowSelection = true
@@ -330,6 +335,7 @@ class TrackingOverlayController(
         flowMandiriRadio.isEnabled = enabled
         flowOfflineRadio.isEnabled = enabled
         flowRumahKosongRadio.isEnabled = enabled
+        flowTulRadio.isEnabled = enabled
     }
 
     private fun saveFlow(flow: AutomationFlow) {
