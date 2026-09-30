@@ -7,6 +7,13 @@ data class SessionStats(
     val totalSeen: Int
 )
 
+data class AutomationLogEntry(
+    val timestamp: Long,
+    val state: String,
+    val level: String,
+    val message: String
+)
+
 interface LocalDataStore {
     fun hasWorkOrderInSession(idPelanggan: String, sessionStartedAt: Long): Boolean
 
@@ -42,6 +49,8 @@ interface LocalDataStore {
     )
 
     fun getSessionStats(sessionStartedAt: Long): SessionStats
+
+    fun getRecentLogs(sessionStartedAt: Long, limit: Int = 150): List<AutomationLogEntry>
 
     fun close()
 }
