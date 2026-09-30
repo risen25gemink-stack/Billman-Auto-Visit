@@ -20,7 +20,10 @@ data class PaginationInfo(
 class ScreenReader(
     private val service: AccessibilityService
 ) {
-    private val regexKodeWo = Regex("^P323\\d+$")
+    // Billman menampilkan Kode WO dalam dua bentuk yang sudah muncul di flow:
+    // P323... dan nomor WO numerik panjang (contoh visual: 6013232020260921000508).
+    // ID pelanggan tetap dibatasi 9-15 digit agar tidak tertukar dengan Kode WO.
+    private val regexKodeWo = Regex("^(?:P323\\d+|\\d{16,30})$")
     private val regexIdPelanggan = Regex("^\\d{9,15}$")
     private val regexPagination = Regex(
         "Halaman\\s+(\\d+)\\s+dari\\s+(\\d+)",
@@ -117,9 +120,9 @@ class ScreenReader(
             val searchEnd = minOf(index + MAX_ID_LOOKAHEAD, visibleTexts.lastIndex)
             for (candidateIndex in (index + 1)..searchEnd) {
                 val raw = visibleTexts[candidateIndex].trim()
-                val directId = extractCustomerId(raw) ?: raw.takeIf { regexIdPelanggan.matches(it) }
+                val directId = extractCustomerId(raw) ?: raw.replace("\\s", "").takeIf { regexIdPelanggan.matches(it) }
                 if (directId != null) {
-                    if (result.none { it.kodeWo == kodeWo || it.idPelanggan == directId }) {
+                    if (result.none { it.kodeWo == kodeWo }) {
                         result += WorkOrderCandidate(kodeWo, directId)
                     }
                     break
