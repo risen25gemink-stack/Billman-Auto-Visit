@@ -251,31 +251,72 @@ class VisitFlowController(
     }
 
     private suspend fun handleTapCamera2(): Boolean {
-        val cameraNode = waitWithRetry(AutomationState.TAP_CAMERA_2) {
-            screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_ID)
-                ?.takeIf {
-                    it.isVisibleToUser && screenReader.isNodeOrClickableAncestorEnabled(it)
-                }
-        }
-
-        if (!AutomationRuntime.isRunning) return false
-        if (cameraNode == null) {
-            failCurrentState("Ikon kamera invoice tidak ditemukan/aktif")
-            return false
-        }
-
-        if (!screenReader.clickNode(cameraNode)) {
-            failCurrentState("Gagal membuka kamera invoice")
-            return false
-        }
-
-        camera2RetryCount = 0
-        updateStateAndLog(
-            AutomationState.TAP_CAMERA_2,
-            "Kamera Foto Penyerahan Invoice dibuka"
+        // Pada Billman V3.0.2 accessibility snapshot, node yang terlihat adalah
+        // iv_bukti_form_penyerahan_invoice. Namun resource tombol lama
+        // btn_photo_penyerahan_invoice masih ada di APK dan dapat menjadi
+        // clickable target yang sebenarnya. Karena itu jangan menganggap
+        // ACTION_CLICK berhasil berarti kamera benar-benar sudah terbuka.
+        val cameraIds = listOf(
+            BTN_PHOTO_INVOICE_BUTTON_ID,
+            BTN_PHOTO_INVOICE_IMAGE_ID
         )
-        AutomationRuntime.transitionTo(AutomationState.CAMERA_SHUTTER_2)
-        return true
+
+        for ((index, resourceId) in cameraIds.withIndex()) {
+            if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return false
+
+            val cameraNode = waitWithRetry(AutomationState.TAP_CAMERA_2) {
+                screenReader.findNodeByResourceId(resourceId)
+                    ?.takeIf {
+                        it.isVisibleToUser &&
+                            screenReader.isNodeOrClickableAncestorEnabled(it)
+                    }
+            }
+
+            if (cameraNode == null) {
+                if (index == cameraIds.lastIndex) {
+                    failCurrentState("Ikon kamera invoice tidak ditemukan/aktif")
+                    return false
+                }
+                continue
+            }
+
+            if (!screenReader.clickNode(cameraNode)) {
+                dataStore.addLog(
+                    currentRecordId,
+                    AutomationState.TAP_CAMERA_2.name,
+                    "WARNING",
+                    "ACTION_CLICK gagal pada target invoice $resourceId"
+                )
+                continue
+            }
+
+            // Verifikasi nyata: CameraTapper harus melihat shutter.
+            // Jika tetap berada di Visit WO, coba target selector berikutnya
+            // daripada langsung masuk CAMERA_SHUTTER_2.
+            val opened = poll(CAMERA_OPEN_VERIFY_TIMEOUT_MS) {
+                cameraTapper.findShutterNode()
+            }
+
+            if (opened != null) {
+                camera2RetryCount = 0
+                updateStateAndLog(
+                    AutomationState.TAP_CAMERA_2,
+                    "Kamera Foto Penyerahan Invoice benar-benar terbuka via $resourceId"
+                )
+                AutomationRuntime.transitionTo(AutomationState.CAMERA_SHUTTER_2)
+                return true
+            }
+
+            dataStore.addLog(
+                currentRecordId,
+                AutomationState.TAP_CAMERA_2.name,
+                "WARNING",
+                "Target invoice $resourceId terklik tetapi shutter kamera belum muncul; mencoba target berikutnya"
+            )
+        }
+
+        failCurrentState("Kamera invoice tidak terbuka setelah mencoba seluruh target selector")
+        return false
     }
 
     private suspend fun handleCameraShutter2(): Boolean {
@@ -562,8 +603,11 @@ class VisitFlowController(
         private const val VISIT_CONFIRMATION_APPEAR_TIMEOUT_MS = 3_000L
 
         private const val BTN_VISIT_ID = "dev.iconpln.mims:id/btn_visit"
-        private const val BTN_PHOTO_INVOICE_ID =
+        private const val BTN_PHOTO_INVOICE_BUTTON_ID =
+            "dev.iconpln.mims:id/btn_photo_penyerahan_invoice"
+        private const val BTN_PHOTO_INVOICE_IMAGE_ID =
             "dev.iconpln.mims:id/iv_bukti_form_penyerahan_invoice"
+        private const val CAMERA_OPEN_VERIFY_TIMEOUT_MS = 4_000L
         private const val CB_INFORMASI_TAGIHAN_ID =
             "dev.iconpln.mims:id/cb_informasi_tagihan"
         private const val CB_TANGGAL_PELUNASAN_ID =
