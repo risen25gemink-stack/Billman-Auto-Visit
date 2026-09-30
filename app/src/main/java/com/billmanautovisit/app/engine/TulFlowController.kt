@@ -83,15 +83,29 @@ class TulFlowController(
             val label = screenReader.findNodeByText(BA_TUL_LABEL, exactMatch = false)
             val node = byId ?: label
 
-            if (node != null && node.isVisibleToUser) {
-                node.takeIf { screenReader.isNodeOrClickableAncestorEnabled(it) }
+            if (node != null && node.isVisibleToUser && node.isEnabled) {
+                // btn_poto_penyampaian_ba / iv_poto_penyampaian_ba adalah
+                // ImageView pada snapshot runtime. Jangan menolak node hanya
+                // karena accessibility tidak menandainya clickable; clickNode()
+                // akan mencoba ACTION_CLICK pada node lalu ancestor-nya.
+                node
             } else {
-                if (label != null) {
-                    screenReader.showNodeOnScreen(label)
-                    screenReader.scrollForwardFrom(label)
+                // Node bisa sudah ada di accessibility tree tetapi belum berada
+                // di viewport. Paksa scroll dari node/label dan biarkan polling
+                // berikutnya mencari ulang node kamera.
+                val anchor = node ?: label
+                if (anchor != null) {
+                    screenReader.showNodeOnScreen(anchor)
+                    screenReader.scrollForwardFrom(anchor)
                 } else {
                     screenReader.scrollForwardOnce()
                 }
+                dataStore.addLog(
+                    currentRecordId,
+                    AutomationState.TUL_PHOTO_BA.name,
+                    "INFO",
+                    "Mencari kamera BA TUL: scroll viewport"
+                )
                 null
             }
         }
@@ -103,8 +117,17 @@ class TulFlowController(
         }
 
         if (!screenReader.clickNode(camera)) {
-            failCurrentState("Gagal membuka kamera BA TUL")
-            return false
+            // Satu usaha tambahan: tampilkan node/ancestor di viewport lalu
+            // klik ulang. Ini khusus untuk ImageView pemicu kamera yang tidak
+            // selalu melaporkan ACTION_CLICK pada node itu sendiri.
+            screenReader.showNodeOnScreen(camera)
+            screenReader.scrollForwardFrom(camera)
+            delay(350)
+
+            if (!screenReader.clickNode(camera)) {
+                failCurrentState("Gagal membuka kamera BA TUL")
+                return false
+            }
         }
 
         cameraRetryCount = 0
