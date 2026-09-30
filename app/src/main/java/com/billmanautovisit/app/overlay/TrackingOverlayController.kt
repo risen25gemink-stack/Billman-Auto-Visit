@@ -396,20 +396,20 @@ class TrackingOverlayController(
         val sessionId = AutomationRuntime.sessionStartedAt
         val logs = if (sessionId > 0L) dataStore.getRecentLogs(sessionId, 150) else emptyList()
         val snapshot = runCatching { screenReader.describeWorkOrderScreen(100) }
-            .getOrElse { "snapshot-error=\${it.javaClass.simpleName}: \${it.message ?: "unknown"}" }
+            .getOrElse { "snapshot-error=${it.javaClass.simpleName}: ${it.message ?: "unknown"}" }
 
         val text = buildString {
             appendLine("BILLMAN AUTO VISIT DIAGNOSTIC")
-            appendLine("flow=\${AutomationRuntime.selectedFlow.wireValue}")
-            appendLine("state=\${AutomationRuntime.currentState.name}")
-            appendLine("id=\${AutomationRuntime.currentIdPelanggan ?: "-"}")
-            appendLine("kodeWo=\${AutomationRuntime.currentKodeWo ?: "-"}")
-            appendLine("status=\${AutomationRuntime.statusMessage}")
-            appendLine("latestAction=\${AutomationRuntime.latestAction}")
+            appendLine("flow=${AutomationRuntime.selectedFlow.wireValue}")
+            appendLine("state=${AutomationRuntime.currentState.name}")
+            appendLine("id=${AutomationRuntime.currentIdPelanggan ?: "-"}")
+            appendLine("kodeWo=${AutomationRuntime.currentKodeWo ?: "-"}")
+            appendLine("status=${AutomationRuntime.statusMessage}")
+            appendLine("latestAction=${AutomationRuntime.latestAction}")
             appendLine()
             appendLine("LOGS:")
             logs.forEach { entry ->
-                appendLine("\${entry.timestamp} | \${entry.level} | \${entry.state} | \${entry.message}")
+                appendLine("${entry.timestamp} | ${entry.level} | ${entry.state} | ${entry.message}")
             }
             appendLine()
             appendLine("ACCESSIBILITY SNAPSHOT:")
@@ -420,6 +420,7 @@ class TrackingOverlayController(
         clipboard.setPrimaryClip(ClipData.newPlainText("Billman Auto Visit diagnostic", text))
         Toast.makeText(service, "Diagnostik disalin. Tempelkan di chat.", Toast.LENGTH_SHORT).show()
     }
+
     private fun removeOverlay() {
         val view = rootView ?: return
         runCatching { windowManager.removeView(view) }
