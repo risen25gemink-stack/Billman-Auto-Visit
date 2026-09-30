@@ -167,7 +167,7 @@ class ScreenReader(
             val desc = node.contentDescription?.toString()?.trim().orEmpty()
             val viewId = node.viewIdResourceName.orEmpty()
             if (text.isNotEmpty() || desc.isNotEmpty() || viewId.isNotEmpty()) {
-                output += "text=\${text.take(80).ifEmpty { "-" }}; desc=\${desc.take(60).ifEmpty { "-" }}; id=\${viewId.ifEmpty { "-" }}; class=\${node.className?.toString().orEmpty()}"
+                output += "text=${text.take(80).ifEmpty { "-" }}; desc=${desc.take(60).ifEmpty { "-" }}; id=${viewId.ifEmpty { "-" }}; class=${node.className?.toString().orEmpty()}"
             }
         }
         for (index in 0 until node.childCount) {
