@@ -27,6 +27,13 @@ enum class AutomationFlow(
         settlementResourceId = "dev.iconpln.mims:id/radio_rumah_kosong",
         settlementSearchText = "RUMAH KOSONG",
         directFinishAfterSettlement = true
+    ),
+    TUL(
+        wireValue = "tul",
+        displayName = "Alur TUL",
+        settlementLabel = "",
+        settlementResourceId = "",
+        settlementSearchText = ""
     );
 
     companion object {
