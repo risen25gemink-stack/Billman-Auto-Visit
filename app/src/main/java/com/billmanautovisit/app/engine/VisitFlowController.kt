@@ -208,6 +208,24 @@ class VisitFlowController(
             return false
         }
 
+        if (AutomationRuntime.selectedFlow == com.billmanautovisit.app.core.AutomationFlow.TUL) {
+            val vi01Badge = waitWithRetry(AutomationState.VISIT_WO_SCREEN) {
+                screenReader.findNodeByText("VI-01", exactMatch = true)
+            }
+            if (!AutomationRuntime.isRunning) return false
+            if (vi01Badge == null) {
+                failCurrentState("Alur TUL dipilih tetapi badge VI-01 tidak ditemukan")
+                return false
+            }
+            dataStore.addLog(
+                currentRecordId,
+                AutomationState.VISIT_WO_SCREEN.name,
+                "INFO",
+                "Badge VI-01 terdeteksi; menjalankan Alur TUL"
+            )
+            AutomationRuntime.setLatestAction("Badge VI-01 terdeteksi; Alur TUL aktif")
+        }
+
         val cameraVisible = waitWithRetry(AutomationState.VISIT_WO_SCREEN) {
             val camera = screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_ID)
             if (camera != null && camera.isVisibleToUser) {
