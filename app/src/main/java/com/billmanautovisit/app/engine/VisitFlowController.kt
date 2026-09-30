@@ -563,7 +563,7 @@ class VisitFlowController(
 
         private const val BTN_VISIT_ID = "dev.iconpln.mims:id/btn_visit"
         private const val BTN_PHOTO_INVOICE_ID =
-            "dev.iconpln.mims:id/btn_photo_penyerahan_invoice"
+            "dev.iconpln.mims:id/iv_bukti_form_penyerahan_invoice"
         private const val CB_INFORMASI_TAGIHAN_ID =
             "dev.iconpln.mims:id/cb_informasi_tagihan"
         private const val CB_TANGGAL_PELUNASAN_ID =
