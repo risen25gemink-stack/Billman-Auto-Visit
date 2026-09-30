@@ -143,7 +143,7 @@ class ScreenReader(
         return buildString {
             append("root=ok; visibleNodes=").append(lines.size).append('\n')
             lines.forEachIndexed { index, line ->
-                append(index + 1).append(". ").append(line).append('\\n')
+                append(index + 1).append(". ").append(line).append('\n')
             }
         }.trimEnd()
     }
