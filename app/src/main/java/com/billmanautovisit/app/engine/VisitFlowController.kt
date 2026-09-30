@@ -289,6 +289,20 @@ class VisitFlowController(
             return false
         }
 
+        if (AutomationRuntime.selectedFlow == com.billmanautovisit.app.core.AutomationFlow.TUL) {
+            currentRecordId?.let {
+                dataStore.updateLastState(it, AutomationState.TUL_PHOTO_BA.name)
+            }
+            dataStore.addLog(
+                currentRecordId,
+                AutomationState.TUL_PHOTO_BA.name,
+                "INFO",
+                "Foto invoice selesai; Alur TUL melanjutkan ke foto BA TUL"
+            )
+            AutomationRuntime.transitionTo(AutomationState.TUL_PHOTO_BA)
+            return true
+        }
+
         currentRecordId?.let {
             dataStore.updateLastState(it, AutomationState.CHECK_LUNAS.name)
         }
