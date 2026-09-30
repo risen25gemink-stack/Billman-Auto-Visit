@@ -25,6 +25,7 @@ class BillmanAccessibilityService : AccessibilityService() {
     private lateinit var automationEngine: AutomationEngine
     private lateinit var visitFlowController: VisitFlowController
     private lateinit var finalFlowController: FinalFlowController
+    private lateinit var tulFlowController: TulFlowController
     private lateinit var trackingOverlay: TrackingOverlayController
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -61,6 +62,11 @@ class BillmanAccessibilityService : AccessibilityService() {
             dataStore = localDataStore,
             resumeWoList = { automationEngine.onBillmanEvent() }
         )
+        tulFlowController = TulFlowController(
+            screenReader = screenReader,
+            cameraTapper = cameraTapper,
+            dataStore = localDataStore
+        )
         AutomationRuntime.directFinishListener = {
             if (::finalFlowController.isInitialized) finalFlowController.onBillmanEvent()
         }
@@ -83,7 +89,8 @@ class BillmanAccessibilityService : AccessibilityService() {
         if (
             !::automationEngine.isInitialized ||
             !::visitFlowController.isInitialized ||
-            !::finalFlowController.isInitialized
+            !::finalFlowController.isInitialized ||
+            !::tulFlowController.isInitialized
         ) return
         if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return
 
@@ -123,6 +130,16 @@ class BillmanAccessibilityService : AccessibilityService() {
             stateBeforeDispatch == AutomationState.CHECK_WAJIB
         ) {
             visitFlowController.onBillmanEvent()
+        }
+
+        if (
+            stateBeforeDispatch == AutomationState.TUL_PHOTO_BA ||
+            stateBeforeDispatch == AutomationState.TUL_SELECT_TIDAK_PUTUS ||
+            stateBeforeDispatch == AutomationState.TUL_SELECT_ALASAN ||
+            stateBeforeDispatch == AutomationState.TUL_INPUT_DATA ||
+            stateBeforeDispatch == AutomationState.TUL_SELECT_MIGRATION_NO
+        ) {
+            tulFlowController.onBillmanEvent()
         }
 
         if (
@@ -413,6 +430,7 @@ class BillmanAccessibilityService : AccessibilityService() {
         if (::automationEngine.isInitialized) automationEngine.shutdown()
         if (::visitFlowController.isInitialized) visitFlowController.shutdown()
         if (::finalFlowController.isInitialized) finalFlowController.shutdown()
+        if (::tulFlowController.isInitialized) tulFlowController.shutdown()
         if (::localDataStore.isInitialized) localDataStore.close()
         super.onDestroy()
     }
