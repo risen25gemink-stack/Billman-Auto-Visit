@@ -464,6 +464,12 @@ class TulFlowController(
         private const val MIGRATION_NO_ID = "dev.iconpln.mims:id/rb_prabayar_tidak"
 
         private val TUL_CAMERA_IDS = listOf(
+            // ID diverifikasi dari accessibility snapshot Billman V3.0.2:
+            // btn_poto_penyampaian_ba adalah ImageView pemicu foto BA TUL.
+            "dev.iconpln.mims:id/btn_poto_penyampaian_ba",
+            // Fallback visual node pada area foto.
+            "dev.iconpln.mims:id/iv_poto_penyampaian_ba",
+            // Kandidat lama dipertahankan sebagai fallback lintas versi.
             "dev.iconpln.mims:id/ambil_foto_penyampaian_ba_tul",
             "dev.iconpln.mims:id/btn_ambil_foto_penyampaian_ba_tul",
             "dev.iconpln.mims:id/foto_form_penyerahan_ba_tul_vi_01"
