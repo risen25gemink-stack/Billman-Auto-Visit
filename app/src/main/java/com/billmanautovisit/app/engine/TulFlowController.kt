@@ -183,8 +183,11 @@ class TulFlowController(
 
     private suspend fun handleAlasan(): Boolean {
         val dropdown = waitWithRetry(AutomationState.TUL_SELECT_ALASAN) {
-            screenReader.findNodeByText("Pilih alasan tidak putus", exactMatch = true)
-                ?: screenReader.findNodeByText("Alasan tidak diputus", exactMatch = false)
+            // Billman V3.0.2 menyediakan label "Pilih Alasan Tidak Putus".
+            // Beberapa build lama memakai variasi kapitalisasi/lowercase.
+            screenReader.findNodeByText("Pilih Alasan Tidak Putus", exactMatch = true)
+                ?: screenReader.findNodeByText("Pilih alasan tidak diputus", exactMatch = true)
+                ?: screenReader.findNodeByText("Pilih alasan tidak putus", exactMatch = false)
         }
 
         if (!AutomationRuntime.isRunning) return false
