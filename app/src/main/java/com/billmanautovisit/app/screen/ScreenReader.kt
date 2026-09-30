@@ -141,7 +141,7 @@ class ScreenReader(
         val lines = mutableListOf<String>()
         collectDiagnosticNodes(root, lines, maxItems)
         return buildString {
-            append("root=ok; visibleNodes=").append(lines.size).append('\\n')
+            append("root=ok; visibleNodes=").append(lines.size).append('\n')
             lines.forEachIndexed { index, line ->
                 append(index + 1).append(". ").append(line).append('\\n')
             }
