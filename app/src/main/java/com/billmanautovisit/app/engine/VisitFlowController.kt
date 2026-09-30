@@ -253,85 +253,82 @@ class VisitFlowController(
     }
 
     private suspend fun handleTapCamera2(): Boolean {
-        // Pada Billman V3.0.2 accessibility snapshot, node yang terlihat adalah
-        // iv_bukti_form_penyerahan_invoice. Namun resource tombol lama
-        // btn_photo_penyerahan_invoice masih ada di APK dan dapat menjadi
-        // clickable target yang sebenarnya. Karena itu jangan menganggap
-        // ACTION_CLICK berhasil berarti kamera benar-benar sudah terbuka.
-        val cameraIds = listOf(
-            BTN_PHOTO_INVOICE_BUTTON_ID,
-            BTN_PHOTO_INVOICE_IMAGE_ID
-        )
-
-        for ((index, resourceId) in cameraIds.withIndex()) {
-            if (!AutomationRuntime.isRunning || AutomationRuntime.stopRequested) return false
-
-            val cameraNode = waitWithRetry(AutomationState.TAP_CAMERA_2) {
-                val node = screenReader.findNodeByResourceId(resourceId)
-
-                if (node != null && node.isVisibleToUser && node.isEnabled) {
-                    // Jangan mensyaratkan node ImageView melaporkan clickable=true.
-                    // Pada snapshot Billman V3.0.2, target kamera invoice adalah
-                    // ImageView; ACTION_CLICK bisa diteruskan ke ancestor-nya.
-                    node
-                } else {
-                    // Jika target belum berada di viewport, paksa scroll dan coba
-                    // lagi pada polling berikutnya. Ini juga menangani kasus node
-                    // sudah ada di accessibility tree tetapi belum visibleToUser.
-                    screenReader.scrollForwardOnce()
-                    null
-                }
-            }
-
-            if (cameraNode == null) {
-                if (index == cameraIds.lastIndex) {
-                    failCurrentState("Ikon kamera invoice tidak ditemukan/aktif")
-                    return false
-                }
-                continue
-            }
-
-            if (!screenReader.clickNode(cameraNode)) {
-                dataStore.addLog(
-                    currentRecordId,
-                    AutomationState.TAP_CAMERA_2.name,
-                    "WARNING",
-                    "ACTION_CLICK gagal pada target invoice $resourceId"
-                )
-                continue
-            }
-
-            // Verifikasi nyata: CameraTapper harus melihat shutter.
-            // Jika tetap berada di Visit WO, coba target selector berikutnya
-            // daripada langsung masuk CAMERA_SHUTTER_2.
-            val opened = poll(CAMERA_OPEN_VERIFY_TIMEOUT_MS) {
-                cameraTapper.findShutterNode()
-            }
-
-            if (opened != null) {
-                camera2RetryCount = 0
-                updateStateAndLog(
-                    AutomationState.TAP_CAMERA_2,
-                    "Kamera Foto Penyerahan Invoice benar-benar terbuka via $resourceId"
-                )
-                AutomationRuntime.transitionTo(AutomationState.CAMERA_SHUTTER_2)
-                return true
-            }
-
-            dataStore.addLog(
-                currentRecordId,
-                AutomationState.TAP_CAMERA_2.name,
-                "WARNING",
-                "Target invoice $resourceId terklik tetapi shutter kamera belum muncul; mencoba target berikutnya"
+        // Runtime snapshot Billman V3.0.2 menunjukkan dua node invoice:
+        // iv_bukti_form_penyerahan_invoice (ImageView) dan label
+        // "Foto form penyerahan Invoice INTAG *". Jangan hanya mengandalkan
+        // resource button yang kadang tidak diekspos oleh accessibility tree.
+        val cameraNode = waitWithRetry(AutomationState.TAP_CAMERA_2) {
+            val byButtonId = screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_BUTTON_ID)
+            val byImageId = screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_IMAGE_ID)
+            val label = screenReader.findNodeByText(
+                "Foto form penyerahan Invoice INTAG",
+                exactMatch = false
             )
+            val node = listOf(byButtonId, byImageId, label)
+                .firstOrNull { it != null && it.isVisibleToUser && it.isEnabled }
 
-            // Beri kesempatan layar Visit WO kembali/settle sebelum selector
-            // berikutnya dicari. Tanpa ini, accessibility tree kadang masih
-            // membawa node lama dari frame sebelumnya.
-            delay(400)
+            if (node != null) {
+                node
+            } else {
+                // Target mungkin ada di accessibility tree tetapi belum berada
+                // di viewport. Scroll setiap percobaan lalu baca tree terbaru.
+                val anchor = byButtonId ?: byImageId ?: label
+                if (anchor != null) {
+                    screenReader.showNodeOnScreen(anchor)
+                    screenReader.scrollForwardFrom(anchor)
+                } else {
+                    screenReader.scrollForwardOnce()
+                }
+                null
+            }
         }
 
-        failCurrentState("Kamera invoice tidak terbuka setelah mencoba seluruh target selector")
+        if (!AutomationRuntime.isRunning) return false
+        if (cameraNode == null) {
+            failCurrentState("Ikon kamera Foto Penyerahan Invoice tidak ditemukan/aktif setelah scroll")
+            return false
+        }
+
+        if (!screenReader.clickNode(cameraNode)) {
+            // Untuk ImageView/label yang tidak melaporkan clickable, clickNode()
+            // tetap mencoba ACTION_CLICK pada ancestor. Tampilkan dulu anchor
+            // agar hierarki accessibility yang aktif diperbarui.
+            screenReader.showNodeOnScreen(cameraNode)
+            screenReader.scrollForwardFrom(cameraNode)
+            delay(350)
+
+            val refreshed = screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_BUTTON_ID)
+                ?: screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_IMAGE_ID)
+                ?: screenReader.findNodeByText(
+                    "Foto form penyerahan Invoice INTAG",
+                    exactMatch = false
+                )
+
+            if (refreshed == null || !screenReader.clickNode(refreshed)) {
+                failCurrentState("Gagal menekan kamera Foto Penyerahan Invoice")
+                return false
+            }
+        }
+
+        // Verifikasi nyata: CameraTapper harus melihat shutter. Jika tetap di
+        // Visit WO, jangan pindah state secara asumsi.
+        val opened = poll(CAMERA_OPEN_VERIFY_TIMEOUT_MS) {
+            cameraTapper.findShutterNode()
+        }
+
+        if (opened != null) {
+            camera2RetryCount = 0
+            updateStateAndLog(
+                AutomationState.TAP_CAMERA_2,
+                "Kamera Foto Penyerahan Invoice benar-benar terbuka"
+            )
+            AutomationRuntime.transitionTo(AutomationState.CAMERA_SHUTTER_2)
+            return true
+        }
+
+        failCurrentState(
+            "Kamera invoice tidak terbuka setelah target accessibility diklik"
+        )
         return false
     }
 
