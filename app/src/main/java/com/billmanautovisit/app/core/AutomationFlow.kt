@@ -36,6 +36,16 @@ enum class AutomationFlow(
         settlementSearchText = ""
     );
 
+    val usesBaTulVisitFlow: Boolean
+        get() = this == LUNAS_MANDIRI || this == LUNAS_OFFLINE || this == TUL
+
+    val baTulReasonLabel: String
+        get() = when (this) {
+            LUNAS_MANDIRI -> "LUNAS MANDIRI"
+            LUNAS_OFFLINE, TUL -> "LUNAS OFFLINE"
+            RUMAH_KUNCI_KOSONG -> ""
+        }
+
     companion object {
         fun fromWireValue(value: String?): AutomationFlow =
             entries.firstOrNull { it.wireValue == value } ?: LUNAS_MANDIRI
