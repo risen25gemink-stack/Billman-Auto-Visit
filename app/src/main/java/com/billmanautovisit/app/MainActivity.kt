@@ -129,11 +129,11 @@ class MainActivity : Activity() {
         }
         flowMandiriRadio = flowRadioOption(
             "Alur 1 — Lunas Mandiri",
-            "Status Pelunasan memilih Lunas Mandiri."
+            "Foto BA TUL VI-01, Tidak Putus, alasan LUNAS MANDIRI, lalu data penghuni dan Selesai."
         )
         flowOfflineRadio = flowRadioOption(
             "Alur 2 — Lunas Offline",
-            "Status Pelunasan memilih Lunas Offline; langkah berikutnya sama dengan Alur 1."
+            "Foto BA TUL VI-01, Tidak Putus, alasan LUNAS OFFLINE, lalu data penghuni dan Selesai."
         )
         flowRumahKosongRadio = flowRadioOption(
             "Alur 3 — Rumah Kunci/Kosong",
