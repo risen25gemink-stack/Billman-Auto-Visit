@@ -20,8 +20,11 @@ data class PaginationInfo(
 class ScreenReader(
     private val service: AccessibilityService
 ) {
-    private val regexKodeWo = Regex("^P323\\d+$")
-    private val regexIdPelanggan = Regex("^323\\d{6,}$")
+    // Billman menampilkan Kode WO dalam dua bentuk yang sudah muncul di flow:
+    // P323... dan nomor WO numerik panjang (contoh visual: 6013232020260921000508).
+    // ID pelanggan tetap dibatasi 9-15 digit agar tidak tertukar dengan Kode WO.
+    private val regexKodeWo = Regex("^(?:P323\\d+|\\d{16,30})$")
+    private val regexIdPelanggan = Regex("^\\d{9,15}$")
     private val regexPagination = Regex(
         "Halaman\\s+(\\d+)\\s+dari\\s+(\\d+)",
         RegexOption.IGNORE_CASE
@@ -107,16 +110,71 @@ class ScreenReader(
         collectVisibleTexts(root, visibleTexts)
 
         val result = mutableListOf<WorkOrderCandidate>()
-        for (index in 0 until visibleTexts.lastIndex) {
-            val kodeWo = visibleTexts[index]
-            val idPelanggan = visibleTexts[index + 1]
-            if (regexKodeWo.matches(kodeWo) && regexIdPelanggan.matches(idPelanggan)) {
-                if (result.none { it.idPelanggan == idPelanggan }) {
-                    result += WorkOrderCandidate(kodeWo, idPelanggan)
+
+        for (index in visibleTexts.indices) {
+            val kodeWo = visibleTexts[index].trim()
+            if (!regexKodeWo.matches(kodeWo)) continue
+
+            // Billman dapat membungkus ID pelanggan pada node yang berbeda,
+            // sehingga ID tidak selalu menjadi visibleTexts[index + 1].
+            val searchEnd = minOf(index + MAX_ID_LOOKAHEAD, visibleTexts.lastIndex)
+            for (candidateIndex in (index + 1)..searchEnd) {
+                val raw = visibleTexts[candidateIndex].trim()
+                val directId = extractCustomerId(raw) ?: raw.replace("\\s", "").takeIf { regexIdPelanggan.matches(it) }
+                if (directId != null) {
+                    if (result.none { it.kodeWo == kodeWo }) {
+                        result += WorkOrderCandidate(kodeWo, directId)
+                    }
+                    break
                 }
+
+                // Jangan mengambil ID dari kartu WO berikutnya.
+                if (regexKodeWo.matches(raw)) break
             }
         }
+
         return result
+    }
+
+    fun describeWorkOrderScreen(maxItems: Int = 100): String {
+        val root = currentRoot() ?: return "rootInActiveWindow=null"
+        val lines = mutableListOf<String>()
+        collectDiagnosticNodes(root, lines, maxItems)
+        return buildString {
+            append("root=ok; visibleNodes=").append(lines.size).append('\n')
+            lines.forEachIndexed { index, line ->
+                append(index + 1).append(". ").append(line).append('\n')
+            }
+        }.trimEnd()
+    }
+
+    private fun extractCustomerId(value: String): String? {
+        val labeled = Regex(
+            "(?:ID\\s*Pelanggan)\\s*[:\\-]?\\s*(\\d{9,15})",
+            RegexOption.IGNORE_CASE
+        ).find(value)
+        return labeled?.groupValues?.getOrNull(1)
+    }
+
+    private fun collectDiagnosticNodes(
+        node: AccessibilityNodeInfo,
+        output: MutableList<String>,
+        maxItems: Int
+    ) {
+        if (output.size >= maxItems) return
+        if (node.isVisibleToUser) {
+            val text = node.text?.toString()?.trim().orEmpty()
+            val desc = node.contentDescription?.toString()?.trim().orEmpty()
+            val viewId = node.viewIdResourceName.orEmpty()
+            if (text.isNotEmpty() || desc.isNotEmpty() || viewId.isNotEmpty()) {
+                output += "text=${text.take(80).ifEmpty { "-" }}; desc=${desc.take(60).ifEmpty { "-" }}; id=${viewId.ifEmpty { "-" }}; class=${node.className?.toString().orEmpty()}"
+            }
+        }
+        for (index in 0 until node.childCount) {
+            val child = node.getChild(index) ?: continue
+            collectDiagnosticNodes(child, output, maxItems)
+            if (output.size >= maxItems) return
+        }
     }
 
     fun isNodeOrClickableAncestorEnabled(node: AccessibilityNodeInfo): Boolean {
@@ -335,6 +393,7 @@ class ScreenReader(
 
     companion object {
         private const val BILLMAN_TAKE_PICTURE_ID = "dev.iconpln.mims:id/btn_take_picture"
+        private const val MAX_ID_LOOKAHEAD = 8
 
         private val NEXT_PAGE_IDS = listOf(
             "dev.iconpln.mims:id/iv_next_page",

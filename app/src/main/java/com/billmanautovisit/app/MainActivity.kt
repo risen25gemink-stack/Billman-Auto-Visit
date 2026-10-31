@@ -35,6 +35,7 @@ class MainActivity : Activity() {
     private lateinit var flowMandiriRadio: RadioButton
     private lateinit var flowOfflineRadio: RadioButton
     private lateinit var flowRumahKosongRadio: RadioButton
+    private lateinit var flowTulRadio: RadioButton
     private lateinit var completedValue: TextView
     private lateinit var skippedValue: TextView
     private lateinit var processedValue: TextView
@@ -128,19 +129,24 @@ class MainActivity : Activity() {
         }
         flowMandiriRadio = flowRadioOption(
             "Alur 1 — Lunas Mandiri",
-            "Status Pelunasan memilih Lunas Mandiri."
+            "Foto BA TUL VI-01, Tidak Putus, alasan LUNAS MANDIRI, lalu data penghuni dan Selesai."
         )
         flowOfflineRadio = flowRadioOption(
             "Alur 2 — Lunas Offline",
-            "Status Pelunasan memilih Lunas Offline; langkah berikutnya sama dengan Alur 1."
+            "Foto BA TUL VI-01, Tidak Putus, alasan LUNAS OFFLINE, lalu data penghuni dan Selesai."
         )
         flowRumahKosongRadio = flowRadioOption(
             "Alur 3 — Rumah Kunci/Kosong",
             "Pilih Rumah Kunci/Kosong lalu langsung menuju tombol Selesai."
         )
+        flowTulRadio = flowRadioOption(
+            "Alur TUL",
+            "Khusus WO VI-01: foto BA TUL, Tidak Putus, LUNAS OFFLINE, data penghuni, lalu Selesai."
+        )
         flowGroup.addView(flowMandiriRadio)
         flowGroup.addView(flowOfflineRadio)
         flowGroup.addView(flowRumahKosongRadio)
+        flowGroup.addView(flowTulRadio)
         flowCard.addView(flowGroup)
 
         val progressLabel = sectionLabel("Progres sesi")
@@ -270,6 +276,7 @@ class MainActivity : Activity() {
             AutomationFlow.LUNAS_MANDIRI -> flowMandiriRadio.id
             AutomationFlow.LUNAS_OFFLINE -> flowOfflineRadio.id
             AutomationFlow.RUMAH_KUNCI_KOSONG -> flowRumahKosongRadio.id
+            AutomationFlow.TUL -> flowTulRadio.id
         }
         if (flowGroup.checkedRadioButtonId != targetId) flowGroup.check(targetId)
     }
@@ -277,6 +284,7 @@ class MainActivity : Activity() {
     private fun selectedFlowFromUi(): AutomationFlow = when (flowGroup.checkedRadioButtonId) {
         flowOfflineRadio.id -> AutomationFlow.LUNAS_OFFLINE
         flowRumahKosongRadio.id -> AutomationFlow.RUMAH_KUNCI_KOSONG
+        flowTulRadio.id -> AutomationFlow.TUL
         else -> AutomationFlow.LUNAS_MANDIRI
     }
 
@@ -284,6 +292,7 @@ class MainActivity : Activity() {
         flowMandiriRadio.isEnabled = enabled
         flowOfflineRadio.isEnabled = enabled
         flowRumahKosongRadio.isEnabled = enabled
+        flowTulRadio.isEnabled = enabled
     }
 
     private fun refreshUiState() {

@@ -2,7 +2,7 @@ name: Build Billman Auto Visit APK
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: ["main", "master", "feature/alur-tul"]
   pull_request:
   workflow_dispatch:
 
@@ -49,6 +49,9 @@ jobs:
           echo "Menggunakan sdkmanager: $SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Run unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest
 
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug

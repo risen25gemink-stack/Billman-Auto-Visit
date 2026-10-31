@@ -18,6 +18,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Menangani alur Visit sampai CHECK_WAJIB.
  *
+ * Untuk flow TUL/VI-01, setelah layar Visit WO terverifikasi controller
+ * langsung menyerahkan alur ke TUL_PHOTO_BA. Foto invoice bukan bagian dari
+ * alur TUL yang ditargetkan pada UI Billman V3.0.2.
+ *
  * Penting: INPUT_MIGRASI sengaja TIDAK ditangani di controller ini.
  * Setelah CHECK_WAJIB selesai, state berpindah ke INPUT_MIGRASI lalu controller
  * berhenti. INPUT_MIGRASI ditangani eksklusif oleh BillmanAccessibilityService
@@ -208,56 +212,105 @@ class VisitFlowController(
             return false
         }
 
-        val cameraVisible = waitWithRetry(AutomationState.VISIT_WO_SCREEN) {
-            val camera = screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_ID)
-            if (camera != null && camera.isVisibleToUser) {
-                true
-            } else {
-                screenReader.scrollForwardOnce()
-                null
+        if (AutomationRuntime.selectedFlow.usesBaTulVisitFlow) {
+            val vi01Badge = waitWithRetry(AutomationState.VISIT_WO_SCREEN) {
+                screenReader.findNodeByText("VI-01", exactMatch = true)
             }
+            if (!AutomationRuntime.isRunning) return false
+            if (vi01Badge == null) {
+                failCurrentState(
+                    "${AutomationRuntime.selectedFlow.displayName} memerlukan badge VI-01 untuk foto BA TUL"
+                )
+                return false
+            }
+            val reason = AutomationRuntime.selectedFlow.baTulReasonLabel
+            currentRecordId?.let { dataStore.updateLastState(it, AutomationState.TUL_PHOTO_BA.name) }
+            dataStore.addLog(
+                currentRecordId,
+                AutomationState.TUL_PHOTO_BA.name,
+                "INFO",
+                "Badge VI-01 terdeteksi; melewati foto invoice dan menuju kamera BA TUL; alasan = $reason"
+            )
+            AutomationRuntime.setLatestAction("Badge VI-01 terdeteksi; menuju foto BA TUL ($reason)")
+            AutomationRuntime.transitionTo(AutomationState.TUL_PHOTO_BA)
+            return true
         }
 
-        if (!AutomationRuntime.isRunning) return false
-        if (cameraVisible != true) {
-            failCurrentState("Ikon kamera Foto Penyerahan Invoice tidak ditemukan setelah scroll")
-            return false
-        }
-
+        val vi01Badge = screenReader.findNodeByText("VI-01", exactMatch = true)
+            ?.takeIf { it.isVisibleToUser }
+        val photoTarget = visitPhotoTargetFor(isVi01 = vi01Badge != null)
         updateStateAndLog(
             AutomationState.VISIT_WO_SCREEN,
-            "Layar Visit WO terdeteksi dan kamera invoice terlihat"
+            if (photoTarget.isBaTul) "Badge VI-01 terdeteksi; Alur ${AutomationRuntime.selectedFlow.displayName} memakai foto BA TUL"
+            else "Badge VI-01 tidak ditemukan; memakai foto invoice"
         )
         AutomationRuntime.transitionTo(AutomationState.TAP_CAMERA_2)
         return true
     }
 
     private suspend fun handleTapCamera2(): Boolean {
+        val photoTarget = visitPhotoTargetFor(
+            isVi01 = screenReader.findNodeByText("VI-01", exactMatch = true)?.isVisibleToUser == true
+        )
         val cameraNode = waitWithRetry(AutomationState.TAP_CAMERA_2) {
-            screenReader.findNodeByResourceId(BTN_PHOTO_INVOICE_ID)
-                ?.takeIf {
-                    it.isVisibleToUser && screenReader.isNodeOrClickableAncestorEnabled(it)
-                }
+            val candidates = photoTarget.cameraResourceIds.mapNotNull(screenReader::findNodeByResourceId)
+            val label = screenReader.findNodeByText(photoTarget.label, exactMatch = false)
+            val node = (candidates + listOfNotNull(label))
+                .firstOrNull { it.isVisibleToUser && it.isEnabled }
+            if (node != null) node else {
+                val anchor = candidates.firstOrNull() ?: label
+                if (anchor != null) {
+                    screenReader.showNodeOnScreen(anchor)
+                    screenReader.scrollForwardFrom(anchor)
+                } else screenReader.scrollForwardOnce()
+                null
+            }
         }
 
         if (!AutomationRuntime.isRunning) return false
         if (cameraNode == null) {
-            failCurrentState("Ikon kamera invoice tidak ditemukan/aktif")
+            failCurrentState("Target foto ${photoTarget.label} tidak ditemukan/aktif setelah scroll")
             return false
         }
 
         if (!screenReader.clickNode(cameraNode)) {
-            failCurrentState("Gagal membuka kamera invoice")
-            return false
+            // Untuk ImageView/label yang tidak melaporkan clickable, clickNode()
+            // tetap mencoba ACTION_CLICK pada ancestor. Tampilkan dulu anchor
+            // agar hierarki accessibility yang aktif diperbarui.
+            screenReader.showNodeOnScreen(cameraNode)
+            screenReader.scrollForwardFrom(cameraNode)
+            delay(350)
+
+            val refreshed = photoTarget.cameraResourceIds
+                .firstNotNullOfOrNull(screenReader::findNodeByResourceId)
+                ?: screenReader.findNodeByText(photoTarget.label, exactMatch = false)
+
+            if (refreshed == null || !screenReader.clickNode(refreshed)) {
+                failCurrentState("Gagal menekan target foto ${photoTarget.label}")
+                return false
+            }
         }
 
-        camera2RetryCount = 0
-        updateStateAndLog(
-            AutomationState.TAP_CAMERA_2,
-            "Kamera Foto Penyerahan Invoice dibuka"
+        // Verifikasi nyata: CameraTapper harus melihat shutter. Jika tetap di
+        // Visit WO, jangan pindah state secara asumsi.
+        val opened = poll(CAMERA_OPEN_VERIFY_TIMEOUT_MS) {
+            cameraTapper.findShutterNode()
+        }
+
+        if (opened != null) {
+            camera2RetryCount = 0
+            updateStateAndLog(
+                AutomationState.TAP_CAMERA_2,
+                "Kamera ${photoTarget.label} benar-benar terbuka"
+            )
+            AutomationRuntime.transitionTo(AutomationState.CAMERA_SHUTTER_2)
+            return true
+        }
+
+        failCurrentState(
+            "Kamera ${photoTarget.label} tidak terbuka setelah target accessibility diklik"
         )
-        AutomationRuntime.transitionTo(AutomationState.CAMERA_SHUTTER_2)
-        return true
+        return false
     }
 
     private suspend fun handleCameraShutter2(): Boolean {
@@ -267,16 +320,16 @@ class VisitFlowController(
 
         if (!AutomationRuntime.isRunning) return false
         if (shutter == null) {
-            return retryCamera2OrFail("Tombol shutter kamera invoice tidak terdeteksi")
+            return retryCamera2OrFail("Tombol shutter kamera foto Visit tidak terdeteksi")
         }
 
         if (!cameraTapper.tapShutter(shutter)) {
-            return retryCamera2OrFail("Shutter kamera invoice terdeteksi tetapi gagal ditekan")
+            return retryCamera2OrFail("Shutter kamera foto Visit terdeteksi tetapi gagal ditekan")
         }
 
         updateStateAndLog(
             AutomationState.CAMERA_SHUTTER_2,
-            "Shutter kamera invoice ditekan"
+            "Shutter kamera foto Visit ditekan"
         )
 
         val returned = waitWithRetry(AutomationState.CAMERA_SHUTTER_2) {
@@ -285,8 +338,22 @@ class VisitFlowController(
 
         if (!AutomationRuntime.isRunning) return false
         if (returned != true) {
-            failCurrentState("Tidak kembali ke layar Visit WO setelah foto invoice")
+            failCurrentState("Tidak kembali ke layar Visit WO setelah foto")
             return false
+        }
+
+        if (AutomationRuntime.selectedFlow.usesBaTulVisitFlow) {
+            currentRecordId?.let {
+                dataStore.updateLastState(it, AutomationState.TUL_PHOTO_BA.name)
+            }
+            dataStore.addLog(
+                currentRecordId,
+                AutomationState.TUL_PHOTO_BA.name,
+                "INFO",
+                "Foto invoice selesai; Alur TUL melanjutkan ke foto BA TUL"
+            )
+            AutomationRuntime.transitionTo(AutomationState.TUL_PHOTO_BA)
+            return true
         }
 
         currentRecordId?.let {
@@ -451,7 +518,7 @@ class VisitFlowController(
         }
 
         if (returned != true) {
-            failCurrentState("Gagal kembali ke Visit WO untuk retry kamera invoice")
+            failCurrentState("Gagal kembali ke Visit WO untuk retry kamera foto")
             return false
         }
 
@@ -530,8 +597,11 @@ class VisitFlowController(
         private const val VISIT_CONFIRMATION_APPEAR_TIMEOUT_MS = 3_000L
 
         private const val BTN_VISIT_ID = "dev.iconpln.mims:id/btn_visit"
-        private const val BTN_PHOTO_INVOICE_ID =
+        private const val BTN_PHOTO_INVOICE_BUTTON_ID =
             "dev.iconpln.mims:id/btn_photo_penyerahan_invoice"
+        private const val BTN_PHOTO_INVOICE_IMAGE_ID =
+            "dev.iconpln.mims:id/iv_bukti_form_penyerahan_invoice"
+        private const val CAMERA_OPEN_VERIFY_TIMEOUT_MS = 4_000L
         private const val CB_INFORMASI_TAGIHAN_ID =
             "dev.iconpln.mims:id/cb_informasi_tagihan"
         private const val CB_TANGGAL_PELUNASAN_ID =

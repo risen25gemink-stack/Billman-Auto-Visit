@@ -1,6 +1,8 @@
 package com.billmanautovisit.app.overlay
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -17,6 +19,7 @@ import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
+import android.widget.Toast
 import com.billmanautovisit.app.core.AutomationFlow
 import com.billmanautovisit.app.core.AutomationRuntime
 import com.billmanautovisit.app.data.LocalDataStore
@@ -46,8 +49,10 @@ class TrackingOverlayController(
     private lateinit var flowMandiriRadio: RadioButton
     private lateinit var flowOfflineRadio: RadioButton
     private lateinit var flowRumahKosongRadio: RadioButton
+    private lateinit var flowTulRadio: RadioButton
     private lateinit var flowHintText: TextView
     private lateinit var pauseButton: Button
+    private lateinit var diagnosticButton: Button
 
     private val refreshRunnable = object : Runnable {
         override fun run() {
@@ -229,6 +234,8 @@ class TrackingOverlayController(
         flowGroup.addView(flowMandiriRadio)
         flowGroup.addView(flowOfflineRadio)
         flowGroup.addView(flowRumahKosongRadio)
+        flowTulRadio = overlayFlowRadio("Alur TUL")
+        flowGroup.addView(flowTulRadio)
         flowGroup.setOnCheckedChangeListener { _, _ ->
             if (updatingFlowSelection) return@setOnCheckedChangeListener
             val flow = selectedFlowFromOverlay()
@@ -267,6 +274,18 @@ class TrackingOverlayController(
             }
         }
 
+        diagnosticButton = Button(service).apply {
+            text = "Salin diagnostik"
+            textSize = 12f
+            isAllCaps = false
+            setTextColor(INK)
+            background = roundedDrawable(CANVAS, dp(8), HAIRLINE)
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setOnClickListener { copyDiagnostics() }
+        }
+
         card.addView(header)
         card.addView(progressText)
         card.addView(pageText)
@@ -276,6 +295,7 @@ class TrackingOverlayController(
         card.addView(flowGroup)
         card.addView(flowHintText)
         card.addView(pauseButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40)))
+        card.addView(diagnosticButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40)).apply { topMargin = dp(6) })
 
         val params = WindowManager.LayoutParams(
             dp(310),
@@ -310,6 +330,7 @@ class TrackingOverlayController(
     private fun selectedFlowFromOverlay(): AutomationFlow = when (flowGroup.checkedRadioButtonId) {
         flowOfflineRadio.id -> AutomationFlow.LUNAS_OFFLINE
         flowRumahKosongRadio.id -> AutomationFlow.RUMAH_KUNCI_KOSONG
+        flowTulRadio.id -> AutomationFlow.TUL
         else -> AutomationFlow.LUNAS_MANDIRI
     }
 
@@ -319,6 +340,7 @@ class TrackingOverlayController(
             AutomationFlow.LUNAS_MANDIRI -> flowMandiriRadio.id
             AutomationFlow.LUNAS_OFFLINE -> flowOfflineRadio.id
             AutomationFlow.RUMAH_KUNCI_KOSONG -> flowRumahKosongRadio.id
+            AutomationFlow.TUL -> flowTulRadio.id
         }
         if (flowGroup.checkedRadioButtonId == targetId) return
         updatingFlowSelection = true
@@ -330,6 +352,7 @@ class TrackingOverlayController(
         flowMandiriRadio.isEnabled = enabled
         flowOfflineRadio.isEnabled = enabled
         flowRumahKosongRadio.isEnabled = enabled
+        flowTulRadio.isEnabled = enabled
     }
 
     private fun saveFlow(flow: AutomationFlow) {
@@ -367,6 +390,35 @@ class TrackingOverlayController(
                 else -> false
             }
         }
+    }
+
+    private fun copyDiagnostics() {
+        val sessionId = AutomationRuntime.sessionStartedAt
+        val logs = if (sessionId > 0L) dataStore.getRecentLogs(sessionId, 150) else emptyList()
+        val snapshot = runCatching { screenReader.describeWorkOrderScreen(100) }
+            .getOrElse { "snapshot-error=${it.javaClass.simpleName}: ${it.message ?: "unknown"}" }
+
+        val text = buildString {
+            appendLine("BILLMAN AUTO VISIT DIAGNOSTIC")
+            appendLine("flow=${AutomationRuntime.selectedFlow.wireValue}")
+            appendLine("state=${AutomationRuntime.currentState.name}")
+            appendLine("id=${AutomationRuntime.currentIdPelanggan ?: "-"}")
+            appendLine("kodeWo=${AutomationRuntime.currentKodeWo ?: "-"}")
+            appendLine("status=${AutomationRuntime.statusMessage}")
+            appendLine("latestAction=${AutomationRuntime.latestAction}")
+            appendLine()
+            appendLine("LOGS:")
+            logs.forEach { entry ->
+                appendLine("${entry.timestamp} | ${entry.level} | ${entry.state} | ${entry.message}")
+            }
+            appendLine()
+            appendLine("ACCESSIBILITY SNAPSHOT:")
+            append(snapshot)
+        }
+
+        val clipboard = service.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Billman Auto Visit diagnostic", text))
+        Toast.makeText(service, "Diagnostik disalin. Tempelkan di chat.", Toast.LENGTH_SHORT).show()
     }
 
     private fun removeOverlay() {

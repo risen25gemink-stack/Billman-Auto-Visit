@@ -109,6 +109,15 @@ class AutomationEngine(
             screenReader.readWorkOrderCandidates().takeIf { it.isNotEmpty() }
         } ?: emptyList()
 
+        if (candidatesOnScreen.isEmpty()) {
+            dataStore.addLog(
+                null,
+                AutomationState.WO_LIST.name,
+                "WARNING",
+                "Tidak menemukan pasangan Kode WO + ID pelanggan pada halaman ${pageInfo.currentPage}/${pageInfo.totalPages}. Snapshot Accessibility: ${screenReader.describeWorkOrderScreen()}"
+            )
+        }
+
         dataStore.addLog(
             null,
             AutomationState.WO_LIST.name,

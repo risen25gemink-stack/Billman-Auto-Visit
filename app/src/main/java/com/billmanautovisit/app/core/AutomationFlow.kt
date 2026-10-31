@@ -27,7 +27,24 @@ enum class AutomationFlow(
         settlementResourceId = "dev.iconpln.mims:id/radio_rumah_kosong",
         settlementSearchText = "RUMAH KOSONG",
         directFinishAfterSettlement = true
+    ),
+    TUL(
+        wireValue = "tul",
+        displayName = "Alur TUL",
+        settlementLabel = "",
+        settlementResourceId = "",
+        settlementSearchText = ""
     );
+
+    val usesBaTulVisitFlow: Boolean
+        get() = this == LUNAS_MANDIRI || this == LUNAS_OFFLINE || this == TUL
+
+    val baTulReasonLabel: String
+        get() = when (this) {
+            LUNAS_MANDIRI -> "LUNAS MANDIRI"
+            LUNAS_OFFLINE, TUL -> "LUNAS OFFLINE"
+            RUMAH_KUNCI_KOSONG -> ""
+        }
 
     companion object {
         fun fromWireValue(value: String?): AutomationFlow =
