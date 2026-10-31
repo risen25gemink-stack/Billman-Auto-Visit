@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Alur:
  * 1) foto BA TUL
  * 2) pilih Tidak Putus
- * 3) pilih alasan LUNAS OFFLINE
+ * 3) pilih alasan sesuai alur: LUNAS OFFLINE atau LUNAS MANDIRI
  * 4) isi Nama Penghuni = Pelanggan
  * 5) isi Nomor WA = 0000000000000
  * 6) pilih migrasi prabayar = Tidak
@@ -224,25 +224,31 @@ class TulFlowController(
             return false
         }
 
+        val reason = AutomationRuntime.selectedFlow.baTulReasonLabel
+        if (reason.isBlank()) {
+            failCurrentState("Alasan BA TUL tidak dikonfigurasi untuk alur ini")
+            return false
+        }
+
         val option = waitWithRetry(AutomationState.TUL_SELECT_ALASAN) {
-            screenReader.findNodeByText("LUNAS OFFLINE", exactMatch = true)
-                ?: screenReader.findNodeByText("LUNAS OFFLINE", exactMatch = false)
+            screenReader.findNodeByText(reason, exactMatch = true)
+                ?: screenReader.findNodeByText(reason, exactMatch = false)
         }
 
         if (!AutomationRuntime.isRunning) return false
         if (option == null) {
-            failCurrentState("Opsi LUNAS OFFLINE tidak muncul setelah dropdown dibuka")
+            failCurrentState("Opsi $reason tidak muncul setelah dropdown dibuka")
             return false
         }
 
         if (!screenReader.clickNode(option)) {
-            failCurrentState("Gagal memilih LUNAS OFFLINE")
+            failCurrentState("Gagal memilih $reason")
             return false
         }
 
         updateStateAndLog(
             AutomationState.TUL_SELECT_ALASAN,
-            "Alasan tidak diputus = LUNAS OFFLINE"
+            "Alasan tidak diputus = $reason"
         )
         AutomationRuntime.transitionTo(AutomationState.TUL_INPUT_DATA)
         return true
