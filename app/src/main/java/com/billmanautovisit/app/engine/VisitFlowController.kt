@@ -229,10 +229,8 @@ class VisitFlowController(
             return true
         }
 
-        val vi01Badge = waitWithRetry(AutomationState.VISIT_WO_SCREEN) {
-            screenReader.findNodeByText("VI-01", exactMatch = true)?.takeIf { it.isVisibleToUser }
-        }
-        if (!AutomationRuntime.isRunning) return false
+        val vi01Badge = screenReader.findNodeByText("VI-01", exactMatch = true)
+            ?.takeIf { it.isVisibleToUser }
         val photoTarget = visitPhotoTargetFor(isVi01 = vi01Badge != null)
         updateStateAndLog(
             AutomationState.VISIT_WO_SCREEN,
