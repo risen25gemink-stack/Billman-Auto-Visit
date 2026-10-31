@@ -212,19 +212,26 @@ class VisitFlowController(
             return false
         }
 
-        if (AutomationRuntime.selectedFlow == com.billmanautovisit.app.core.AutomationFlow.TUL) {
+        if (AutomationRuntime.selectedFlow.usesBaTulVisitFlow) {
             val vi01Badge = waitWithRetry(AutomationState.VISIT_WO_SCREEN) {
                 screenReader.findNodeByText("VI-01", exactMatch = true)
             }
             if (!AutomationRuntime.isRunning) return false
             if (vi01Badge == null) {
-                failCurrentState("Alur TUL dipilih tetapi badge VI-01 tidak ditemukan")
+                failCurrentState(
+                    "${AutomationRuntime.selectedFlow.displayName} memerlukan badge VI-01 untuk foto BA TUL"
+                )
                 return false
             }
+            val reason = AutomationRuntime.selectedFlow.baTulReasonLabel
             currentRecordId?.let { dataStore.updateLastState(it, AutomationState.TUL_PHOTO_BA.name) }
-            dataStore.addLog(currentRecordId, AutomationState.TUL_PHOTO_BA.name, "INFO",
-                "Badge VI-01 terdeteksi; melewati foto invoice dan menuju kamera BA TUL")
-            AutomationRuntime.setLatestAction("Badge VI-01 terdeteksi; menuju foto BA TUL")
+            dataStore.addLog(
+                currentRecordId,
+                AutomationState.TUL_PHOTO_BA.name,
+                "INFO",
+                "Badge VI-01 terdeteksi; melewati foto invoice dan menuju kamera BA TUL; alasan = $reason"
+            )
+            AutomationRuntime.setLatestAction("Badge VI-01 terdeteksi; menuju foto BA TUL ($reason)")
             AutomationRuntime.transitionTo(AutomationState.TUL_PHOTO_BA)
             return true
         }
@@ -335,7 +342,7 @@ class VisitFlowController(
             return false
         }
 
-        if (AutomationRuntime.selectedFlow == com.billmanautovisit.app.core.AutomationFlow.TUL) {
+        if (AutomationRuntime.selectedFlow.usesBaTulVisitFlow) {
             currentRecordId?.let {
                 dataStore.updateLastState(it, AutomationState.TUL_PHOTO_BA.name)
             }
